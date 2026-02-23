@@ -16,6 +16,22 @@
       {
         "command": "meld-auto-merge.autoMerge",
         "title": "Meld: Auto-Merge Current File"
+      },
+      {
+        "command": "meld-auto-merge.checkoutConflicted",
+        "title": "Meld: Checkout Conflicted (-m)"
+      },
+      {
+        "command": "meld-auto-merge.rerereForget",
+        "title": "Meld: Rerere Forget File"
+      },
+      {
+        "command": "meld-auto-merge.smartAdd",
+        "title": "Meld: Smart Git Add (Verify no conflicts)"
+      },
+      {
+        "command": "meld-auto-merge.listConflicted",
+        "title": "Meld: List Conflicted Files"
       }
     ]
   },
