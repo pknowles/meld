@@ -4,7 +4,7 @@ import type { FileState, DiffChunk } from "./types";
 import { CodePane } from "./CodePane";
 import { DiffCurtain } from "./DiffCurtain";
 import type { editor } from "monaco-editor";
-import { MyersSequenceMatcher } from "../../matchers/myers";
+import { Differ } from "../../matchers/diffutil";
 import debounce from "lodash.debounce";
 
 interface VsCodeApi {
@@ -24,6 +24,7 @@ const App: React.FC = () => {
 	const [files, setFiles] = useState<FileState[]>([]);
 	const [diffs, setDiffs] = useState<DiffChunk[][]>([]);
 	const diffsRef = useRef<DiffChunk[][]>([]);
+	const differRef = useRef<Differ | null>(null);
 	const [renderTrigger, setRenderTrigger] = useState(0);
 	const editorRefs = useRef<editor.IStandaloneCodeEditor[]>([]);
 	// Index of the editor that initiated the current scroll sync.
@@ -37,6 +38,30 @@ const App: React.FC = () => {
 				setFiles(message.data.files);
 				setDiffs(message.data.diffs);
 				diffsRef.current = message.data.diffs;
+
+				// Reconstruct the Differ in the webview so we can use
+				// change_sequence when the user edits the middle column.
+				// This matches how real Meld maintains the Differ alongside
+				// the text buffers.
+				const splitLines = (text: string) => {
+					const lines = text.split("\n");
+					if (lines.length > 0 && lines[lines.length - 1] === "") {
+						lines.pop();
+					}
+					return lines;
+				};
+				const localLines = splitLines(message.data.files[0].content);
+				const midLines = splitLines(message.data.files[1].content);
+				const rightLines = splitLines(message.data.files[2].content);
+
+				const differ = new Differ();
+				const init = differ.set_sequences_iter([localLines, midLines, rightLines]);
+				let step = init.next();
+				while (!step.done) {
+					step = init.next();
+				}
+				differRef.current = differ;
+
 				// Trigger an initial render to draw SVGs once editors mount
 				setTimeout(() => setRenderTrigger((prev) => prev + 1), 500);
 			}
@@ -59,6 +84,8 @@ const App: React.FC = () => {
 
 			const dRef = diffsRef.current;
 
+			// Differ convention: a=Merged(pane1), b=Outer(pane0 or pane2)
+			// mapLine maps a source line to the corresponding target line using a diff.
 			const mapLineWithDiff = (sLine: number, diff: DiffChunk[], sourceIsA: boolean): number => {
 				if (!diff || diff.length === 0) return sLine;
 				let lastChunk = diff[0];
@@ -71,12 +98,11 @@ const App: React.FC = () => {
 					if (sLine >= sStart && sLine < sEnd) {
 						if (chunk.tag === "equal") {
 							return tStart + (sLine - sStart);
-						} else {
-							const sLen = sEnd - sStart;
-							const tLen = tEnd - tStart;
-							const ratio = sLen > 0 ? (sLine - sStart) / sLen : 0;
-							return tStart + ratio * tLen;
 						}
+						const sLen = sEnd - sStart;
+						const tLen = tEnd - tStart;
+						const ratio = sLen > 0 ? (sLine - sStart) / sLen : 0;
+						return tStart + ratio * tLen;
 					}
 					lastChunk = chunk;
 				}
@@ -85,11 +111,14 @@ const App: React.FC = () => {
 				return tEnd + (sLine - sEnd);
 			};
 
+			// Differ: diffs[0] a=Merged b=Local, diffs[1] a=Merged b=Incoming
 			const mapLine = (sLine: number, sIdx: number, tIdx: number): number => {
-				if (sIdx === 0 && tIdx === 1) return mapLineWithDiff(sLine, dRef[0], true);
-				if (sIdx === 1 && tIdx === 0) return mapLineWithDiff(sLine, dRef[0], false);
-				if (sIdx === 1 && tIdx === 2) return mapLineWithDiff(sLine, dRef[1], true);
-				if (sIdx === 2 && tIdx === 1) return mapLineWithDiff(sLine, dRef[1], false);
+				// pane0(Local) ↔ pane1(Merged): diffs[0], b=Local a=Merged
+				if (sIdx === 0 && tIdx === 1) return mapLineWithDiff(sLine, dRef[0], false); // src=b(Local) → tgt=a(Merged)
+				if (sIdx === 1 && tIdx === 0) return mapLineWithDiff(sLine, dRef[0], true);  // src=a(Merged) → tgt=b(Local)
+				// pane1(Merged) ↔ pane2(Incoming): diffs[1], a=Merged b=Incoming
+				if (sIdx === 1 && tIdx === 2) return mapLineWithDiff(sLine, dRef[1], true);  // src=a(Merged) → tgt=b(Incoming)
+				if (sIdx === 2 && tIdx === 1) return mapLineWithDiff(sLine, dRef[1], false); // src=b(Incoming) → tgt=a(Merged)
 				return sLine;
 			};
 
@@ -146,26 +175,44 @@ const App: React.FC = () => {
 
 			setFiles((prev) => {
 				const newFiles = [...prev];
+				const oldMidLines = newFiles[1].content.split("\n");
 				newFiles[1] = { ...newFiles[1], content: value };
+				const newMidLines = value.split("\n");
 
-				// Recalculate diffs locally
-				const leftLines = newFiles[0].content.split("\n");
-				const midLines = newFiles[1].content.split("\n");
-				const rightLines = newFiles[2].content.split("\n");
+				const differ = differRef.current;
+				if (differ) {
+					// Compute startidx and sizechange for change_sequence,
+					// matching Meld's _after_text_modified approach.
+					let startidx = 0;
+					const minLen = Math.min(oldMidLines.length, newMidLines.length);
+					while (startidx < minLen && oldMidLines[startidx] === newMidLines[startidx]) {
+						startidx++;
+					}
+					const sizechange = newMidLines.length - oldMidLines.length;
 
-				const leftDiffs = new MyersSequenceMatcher(
-					null,
-					leftLines,
-					midLines,
-				).get_difference_opcodes();
-				const rDiffs = new MyersSequenceMatcher(
-					null,
-					midLines,
-					rightLines,
-				).get_difference_opcodes();
+					const leftLines = newFiles[0].content.split("\n");
+					const rightLines = newFiles[2].content.split("\n");
 
-				setDiffs([leftDiffs, rDiffs]);
-				diffsRef.current = [leftDiffs, rDiffs];
+					differ.change_sequence(
+						1,
+						startidx,
+						sizechange,
+						[leftLines, newMidLines, rightLines],
+					);
+
+						// Extract from _merge_cache — this has conflict tags.
+					// differ.diffs is raw Myers output (no conflict tags).
+					const leftDiffs = differ._merge_cache
+						.map((pair) => pair[0])
+						.filter((c): c is NonNullable<typeof c> => c !== null);
+					const rightDiffs = differ._merge_cache
+						.map((pair) => pair[1])
+						.filter((c): c is NonNullable<typeof c> => c !== null);
+					const newDiffs = [leftDiffs, rightDiffs];
+					setDiffs(newDiffs);
+					diffsRef.current = newDiffs;
+				}
+
 				setRenderTrigger((p) => p + 1);
 				return newFiles;
 			});
@@ -173,19 +220,22 @@ const App: React.FC = () => {
 		150,
 	);
 
+	// Differ convention: a=Merged(pane1), b=Outer(pane0 or pane2)
 	const getHighlights = (paneIndex: number) => {
 		const highlights: { start: number; end: number; tag: string }[] = [];
 		if (paneIndex === 0 && diffs[0]) {
+			// pane0 = Local = b side of diffs[0]
 			diffs[0].forEach((d) => {
 				if (d.tag !== "equal") {
-					highlights.push({ start: d.start_a + 1, end: d.end_a, tag: d.tag });
+					highlights.push({ start: d.start_b + 1, end: d.end_b, tag: d.tag });
 				}
 			});
 		} else if (paneIndex === 1) {
+			// pane1 = Merged = a side of both diffs
 			if (diffs[0]) {
 				diffs[0].forEach((d) => {
 					if (d.tag !== "equal") {
-						highlights.push({ start: d.start_b + 1, end: d.end_b, tag: d.tag });
+						highlights.push({ start: d.start_a + 1, end: d.end_a, tag: d.tag });
 					}
 				});
 			}
@@ -197,6 +247,7 @@ const App: React.FC = () => {
 				});
 			}
 		} else if (paneIndex === 2 && diffs[1]) {
+			// pane2 = Incoming = b side of diffs[1]
 			diffs[1].forEach((d) => {
 				if (d.tag !== "equal") {
 					highlights.push({ start: d.start_b + 1, end: d.end_b, tag: d.tag });
@@ -262,6 +313,7 @@ const App: React.FC = () => {
 								leftEditor={editorRefs.current[index]}
 								rightEditor={editorRefs.current[index + 1]}
 								renderTrigger={renderTrigger}
+								reversed={index === 0}
 							/>
 						)}
 					</React.Fragment>

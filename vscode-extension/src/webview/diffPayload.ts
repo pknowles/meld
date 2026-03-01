@@ -1,6 +1,6 @@
 import * as cp from "node:child_process";
+import { Differ } from "../matchers/diffutil";
 import { Merger } from "../matchers/merge";
-import { MyersSequenceMatcher } from "../matchers/myers";
 
 export async function buildDiffPayload(
 	repoPath: string,
@@ -65,7 +65,8 @@ export async function buildDiffPayload(
 	const baseLines = splitLines(base);
 	const incomingLines = splitLines(incoming);
 
-	// Run the auto-merger to produce the merged text for the middle column
+	// Step 1: Run the Merger to produce merged text with (??) conflict markers
+	// This matches Meld's _merge_files() in filediff.py
 	const merger = new Merger();
 	const sequences = [localLines, baseLines, incomingLines];
 	const initGen = merger.initialize(sequences, sequences);
@@ -84,9 +85,19 @@ export async function buildDiffPayload(
 
 	const mergedLines = splitLines(mergedContent);
 
-	// Build a Set of unresolved (conflict) line indices in the merged text
-	// for fast lookup when marking diff chunks as conflicts
-	const unresolvedSet = new Set(merger.differ.unresolved);
+	// Step 2: Initialize the Differ with [Local, Merged, Incoming]
+	// This matches Meld's _diff_files() in filediff.py, which runs AFTER
+	// _merge_files() has placed the merged text in the middle buffer.
+	// set_sequences_iter computes diffs as matcher(sequences[1], sequences[i*2])
+	// so the Differ diffs Merged(a) vs Local(b) and Merged(a) vs Incoming(b).
+	// The three-way _auto_merge logic naturally produces 'conflict' tags.
+	const differ = new Differ();
+	const diffSequences = [localLines, mergedLines, incomingLines];
+	const diffInit = differ.set_sequences_iter(diffSequences);
+	let step = diffInit.next();
+	while (!step.done) {
+		step = diffInit.next();
+	}
 
 	const contents = [
 		{ label: "Local (Ours)", content: local, commit: localCommit },
@@ -94,46 +105,24 @@ export async function buildDiffPayload(
 		{ label: "Incoming (Theirs)", content: incoming, commit: incomingCommit },
 	];
 
-	const getDiff = (linesA: string[], linesB: string[]) => {
-		const matcher = new MyersSequenceMatcher(null, linesA, linesB);
-		const initGen = matcher.initialise();
-		let val = initGen.next();
-		while (!val.done) {
-			val = initGen.next();
-		}
-		return matcher.get_opcodes();
-	};
-
-	// Mark diff chunks as 'conflict' if their merged-side line range
-	// overlaps with unresolved lines from the three-way merge.
-	// Two-way Myers diffs can't produce 'conflict' tags, so we inject
-	// them based on the merge result.
-	const markConflicts = (
-		opcodes: ReturnType<typeof getDiff>,
-		mergedStart: "start_a" | "start_b",
-		mergedEnd: "end_a" | "end_b",
-	) => {
-		return opcodes.map((chunk) => {
-			if (chunk.tag === "equal") return chunk;
-			for (let i = chunk[mergedStart]; i < chunk[mergedEnd]; i++) {
-				if (unresolvedSet.has(i)) {
-					return { ...chunk, tag: "conflict" as const };
-				}
-			}
-			return chunk;
-		});
-	};
-
-	// diffs[0]: a=Local(pane0), b=Merged(pane1) — merged side is b
-	const diff1 = markConflicts(getDiff(localLines, mergedLines), "start_b", "end_b");
-	// diffs[1]: a=Merged(pane1), b=Incoming(pane2) — merged side is a
-	const diff2 = markConflicts(getDiff(mergedLines, incomingLines), "start_a", "end_a");
+	// Extract from _merge_cache, not differ.diffs.
+	// differ.diffs is raw Myers output (replace/insert/delete/equal only).
+	// conflict tags only exist in _merge_cache, produced by _merge_diffs/_auto_merge.
+	// This matches what Meld's pair_changes() method yields for rendering.
+	// _merge_cache[i] = [chunk_for_diffs0 | null, chunk_for_diffs1 | null]
+	// These chunks have a=Merged(pane1), b=Outer(Local or Incoming).
+	const leftDiffs = differ._merge_cache
+		.map((pair) => pair[0])
+		.filter((c): c is NonNullable<typeof c> => c !== null);
+	const rightDiffs = differ._merge_cache
+		.map((pair) => pair[1])
+		.filter((c): c is NonNullable<typeof c> => c !== null);
 
 	return {
 		command: "loadDiff",
 		data: {
 			files: contents,
-			diffs: [diff1, diff2],
+			diffs: [leftDiffs, rightDiffs],
 		},
 	};
 }

@@ -7,6 +7,9 @@ interface DiffCurtainProps {
 	leftEditor: editor.IStandaloneCodeEditor;
 	rightEditor: editor.IStandaloneCodeEditor;
 	renderTrigger: number; // For triggering re-renders on scroll
+	// When true, the diff's a/b sides are reversed relative to left/right editors.
+	// diffs[0] has a=Merged(right) b=Local(left), so reversed=true swaps them.
+	reversed: boolean;
 }
 
 export const DiffCurtain: React.FC<DiffCurtainProps> = ({
@@ -14,6 +17,7 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 	leftEditor,
 	rightEditor,
 	renderTrigger: _renderTrigger,
+	reversed,
 }) => {
 	if (!diffs || !leftEditor || !rightEditor) {
 		return null;
@@ -71,10 +75,14 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 				{diffs.map((chunk) => {
 					if (chunk.tag === "equal") return null;
 
-					const leftStartLine = Math.max(1, chunk.start_a + 1);
-					const leftEndLine = Math.max(1, chunk.end_a + 1);
-					const rightStartLine = Math.max(1, chunk.start_b + 1);
-					const rightEndLine = Math.max(1, chunk.end_b + 1);
+					// When reversed, a=right and b=left; otherwise a=left and b=right
+					const leftStartLine = Math.max(1, (reversed ? chunk.start_b : chunk.start_a) + 1);
+					const leftEndLine = Math.max(1, (reversed ? chunk.end_b : chunk.end_a) + 1);
+					const rightStartLine = Math.max(1, (reversed ? chunk.start_a : chunk.start_b) + 1);
+					const rightEndLine = Math.max(1, (reversed ? chunk.end_a : chunk.end_b) + 1);
+
+					const leftEmpty = reversed ? chunk.start_b === chunk.end_b : chunk.start_a === chunk.end_a;
+					const rightEmpty = reversed ? chunk.start_a === chunk.end_a : chunk.start_b === chunk.end_b;
 
 					const y1Top =
 						leftEditor.getTopForLineNumber(leftStartLine) -
@@ -82,7 +90,7 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 					let y1Bottom =
 						leftEditor.getTopForLineNumber(leftEndLine) -
 						leftEditor.getScrollTop() + headerOffset;
-					if (chunk.start_a === chunk.end_a) y1Bottom = y1Top;
+					if (leftEmpty) y1Bottom = y1Top;
 
 					const y2Top =
 						rightEditor.getTopForLineNumber(rightStartLine) -
@@ -90,7 +98,7 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 					let y2Bottom =
 						rightEditor.getTopForLineNumber(rightEndLine) -
 						rightEditor.getScrollTop() + headerOffset;
-					if (chunk.start_b === chunk.end_b) y2Bottom = y2Top;
+					if (rightEmpty) y2Bottom = y2Top;
 
 					const path = `M 0,${y1Top} C ${curveOffset},${y1Top} ${width - curveOffset},${y2Top} ${width},${y2Top} L ${width},${y2Bottom} C ${width - curveOffset},${y2Bottom} ${curveOffset},${y1Bottom} 0,${y1Bottom} Z`;
 

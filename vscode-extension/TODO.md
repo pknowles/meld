@@ -5,6 +5,14 @@
 I'd like to add buttons to our custom merge view that add extra columns. currently we have 3: Local, Merged, Incoming. I want a button on the left of the Local that toggles a new "Base" column to the left. An equivalent button on the right of the "Incoming" title also toggles a new "Base" column to the right. Toggling both makes 5 columns total so you have:
 Base, Local, Merged, Remote, Base
 
+## Highlight characters that differ within changed lines differently
+
+## On-save overwrite detection
+
+window.registerCustomEditorProvider
+
+provides a better dirty flag, consistent with other docs
+
 ## Detect when the user forgot to resolve a conflict and preserve conflict markers
 
 This is a feature meld doesn't have; probably because it's hard.
