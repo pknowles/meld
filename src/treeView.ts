@@ -1,9 +1,9 @@
 // Copyright (C) 2026 Pyarelal Knowles, GPL v2
 
-import * as vscode from "vscode";
 import * as cp from "node:child_process";
-import * as path from "node:path";
 import * as fs from "node:fs";
+import * as path from "node:path";
+import * as vscode from "vscode";
 
 export class ConflictedFilesProvider
 	implements vscode.TreeDataProvider<GitFile>

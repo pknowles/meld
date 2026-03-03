@@ -20,7 +20,8 @@ export class MeldCustomEditorProvider
 	implements vscode.CustomTextEditorProvider
 {
 	public static readonly viewType = "meld.mergeEditor";
-	public static readonly onRequestRefresh = new vscode.EventEmitter<vscode.Uri>();
+	public static readonly onRequestRefresh =
+		new vscode.EventEmitter<vscode.Uri>();
 
 	constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -73,13 +74,12 @@ export class MeldCustomEditorProvider
 		relativeFilePath: string,
 	): Promise<void> {
 		const config = vscode.workspace.getConfiguration("meld");
-		const debounceDelay = config.get<number>("mergeEditor.debounceDelay") ?? 300;
-		const syntaxHighlighting = config.get<boolean>("mergeEditor.syntaxHighlighting") ?? true;
+		const debounceDelay =
+			config.get<number>("mergeEditor.debounceDelay") ?? 300;
+		const syntaxHighlighting =
+			config.get<boolean>("mergeEditor.syntaxHighlighting") ?? true;
 
-		const payload = (await buildDiffPayload(
-			repoPath,
-			relativeFilePath,
-		)) as {
+		const payload = (await buildDiffPayload(repoPath, relativeFilePath)) as {
 			command: string;
 			data: {
 				files: FileState[];
@@ -191,7 +191,6 @@ export class MeldCustomEditorProvider
 						return;
 					}
 
-
 					// The change came from outside our webview (e.g. user typing in the regular text editor tab).
 					// Push the change to the webview.
 					webviewPanel.webview.postMessage({
@@ -202,28 +201,46 @@ export class MeldCustomEditorProvider
 			},
 		);
 
-		const changeConfigurationSubscription = vscode.workspace.onDidChangeConfiguration((e) => {
-			if (e.affectsConfiguration("meld.mergeEditor.debounceDelay") || e.affectsConfiguration("meld.mergeEditor.syntaxHighlighting")) {
-				const newConfig = vscode.workspace.getConfiguration("meld");
-				const newDelay = newConfig.get<number>("mergeEditor.debounceDelay") ?? 300;
-				const newSyntaxHighlighting = newConfig.get<boolean>("mergeEditor.syntaxHighlighting") ?? true;
-				webviewPanel.webview.postMessage({
-					command: "updateConfig",
-					config: { debounceDelay: newDelay, syntaxHighlighting: newSyntaxHighlighting }
-				});
-			}
-		});
+		const changeConfigurationSubscription =
+			vscode.workspace.onDidChangeConfiguration((e) => {
+				if (
+					e.affectsConfiguration("meld.mergeEditor.debounceDelay") ||
+					e.affectsConfiguration("meld.mergeEditor.syntaxHighlighting")
+				) {
+					const newConfig = vscode.workspace.getConfiguration("meld");
+					const newDelay =
+						newConfig.get<number>("mergeEditor.debounceDelay") ?? 300;
+					const newSyntaxHighlighting =
+						newConfig.get<boolean>("mergeEditor.syntaxHighlighting") ?? true;
+					webviewPanel.webview.postMessage({
+						command: "updateConfig",
+						config: {
+							debounceDelay: newDelay,
+							syntaxHighlighting: newSyntaxHighlighting,
+						},
+					});
+				}
+			});
 
-		const refreshSubscription = MeldCustomEditorProvider.onRequestRefresh.event(async (uri) => {
-			if (uri.toString() === document.uri.toString()) {
-				const newPayload = (await buildDiffPayload(repoPath, relativeFilePath)) as {
-					command: string;
-					data: { files: FileState[]; diffs: DiffChunk[][]; config?: { debounceDelay: number; syntaxHighlighting: boolean }; };
-				};
-				newPayload.data.config = { debounceDelay, syntaxHighlighting };
-				webviewPanel.webview.postMessage(newPayload);
-			}
-		});
+		const refreshSubscription = MeldCustomEditorProvider.onRequestRefresh.event(
+			async (uri) => {
+				if (uri.toString() === document.uri.toString()) {
+					const newPayload = (await buildDiffPayload(
+						repoPath,
+						relativeFilePath,
+					)) as {
+						command: string;
+						data: {
+							files: FileState[];
+							diffs: DiffChunk[][];
+							config?: { debounceDelay: number; syntaxHighlighting: boolean };
+						};
+					};
+					newPayload.data.config = { debounceDelay, syntaxHighlighting };
+					webviewPanel.webview.postMessage(newPayload);
+				}
+			},
+		);
 
 		webviewPanel.onDidDispose(() => {
 			messageListener.dispose();
@@ -237,6 +254,9 @@ export class MeldCustomEditorProvider
 		const scriptUri = webview.asWebviewUri(
 			vscode.Uri.joinPath(this.extensionUri, "out", "webview", "index.js"),
 		);
+		const cssUri = webview.asWebviewUri(
+			vscode.Uri.joinPath(this.extensionUri, "out", "webview", "index.css"),
+		);
 
 		return `<!DOCTYPE html>
             <html lang="en">
@@ -244,6 +264,7 @@ export class MeldCustomEditorProvider
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>Meld Diff</title>
+                <link rel="stylesheet" href="${cssUri}">
                 <style>
                     body { padding: 0; margin: 0; background-color: #1e1e1e; }
                 </style>

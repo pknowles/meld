@@ -216,7 +216,12 @@ export const CodePane: React.FC<CodePaneProps> = ({
 				run: (ed) => {
 					const model = ed.getModel();
 					const selection = ed.getSelection();
-					if (!model || !selection || ed.getOption(monaco.editor.EditorOption.readOnly)) return;
+					if (
+						!model ||
+						!selection ||
+						ed.getOption(monaco.editor.EditorOption.readOnly)
+					)
+						return;
 
 					let text = "";
 					let rangeToDelete = selection;
@@ -227,7 +232,7 @@ export const CodePane: React.FC<CodePaneProps> = ({
 						text = `${model.getLineContent(line)}\n`;
 						rangeToDelete = new monaco.Selection(line, 1, line + 1, 1);
 					}
-					
+
 					if (text) {
 						writeClipboardText(text);
 						ed.executeEdits("cut", [{ range: rangeToDelete, text: "" }]);
@@ -466,13 +471,16 @@ export const CodePane: React.FC<CodePaneProps> = ({
 					language={syntaxHighlighting ? "typescript" : "plaintext"}
 					defaultValue={file.content}
 					theme="vs-dark"
-					options={React.useMemo(() => ({
-						minimap: { enabled: false },
-						readOnly: !isMiddle,
-						scrollBeyondLastLine: false,
-						wordWrap: "off" as const,
-						renderWhitespace: "all" as const,
-					}), [isMiddle])}
+					options={React.useMemo(
+						() => ({
+							minimap: { enabled: false },
+							readOnly: !isMiddle,
+							scrollBeyondLastLine: false,
+							wordWrap: "off" as const,
+							renderWhitespace: "all" as const,
+						}),
+						[isMiddle],
+					)}
 					onMount={handleMount}
 					onChange={(value) => {
 						if (isApplyingExternalSync.current) return;

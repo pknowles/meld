@@ -1,9 +1,9 @@
 import {
-	MyersSequenceMatcher,
-	InlineMyersSequenceMatcher,
-	SyncPointMyersSequenceMatcher,
 	find_common_prefix,
 	find_common_suffix,
+	InlineMyersSequenceMatcher,
+	MyersSequenceMatcher,
+	SyncPointMyersSequenceMatcher,
 } from "../src/matchers/myers";
 
 describe("MyersSequenceMatcher", () => {

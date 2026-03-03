@@ -15,17 +15,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import { diffChars } from "diff";
 import debounce from "lodash.debounce";
-import * as monaco from "monaco-editor";
 import type { editor } from "monaco-editor";
+import * as monaco from "monaco-editor";
 import * as React from "react";
 import { useEffect, useRef, useState } from "react";
 import { Differ } from "../../matchers/diffutil";
 import { CodePane } from "./CodePane";
 import { DiffCurtain } from "./DiffCurtain";
-import { diffChars } from "diff";
-import type { DiffChunk, FileState, Highlight } from "./types";
 import { ErrorBoundary } from "./ErrorBoundary";
+import type { DiffChunk, FileState, Highlight } from "./types";
 
 interface VsCodeApi {
 	postMessage: (msg: unknown) => void;
@@ -63,7 +63,9 @@ const App: React.FC = () => {
 	const [renderTrigger, setRenderTrigger] = useState(0);
 	const editorRefs = useRef<editor.IStandaloneCodeEditor[]>([]);
 	// Pending clipboard read requests: requestId -> resolve function
-	const clipboardPendingRef = useRef<Map<number, (text: string) => void>>(new Map());
+	const clipboardPendingRef = useRef<Map<number, (text: string) => void>>(
+		new Map(),
+	);
 	const clipboardRequestIdRef = useRef(0);
 
 	// Routes clipboard paste through the VS Code extension host because
@@ -75,7 +77,10 @@ const App: React.FC = () => {
 			vscodeApi?.postMessage({ command: "readClipboard", requestId: id });
 			// Fallback: if not in a webview, try the browser clipboard directly
 			if (!vscodeApi) {
-				navigator.clipboard.readText().then(resolve).catch(() => resolve(""));
+				navigator.clipboard
+					.readText()
+					.then(resolve)
+					.catch(() => resolve(""));
 			}
 		});
 	}, []);
@@ -106,7 +111,10 @@ const App: React.FC = () => {
 		if (differ) {
 			let startidx = 0;
 			const minLen = Math.min(oldMidLines.length, newMidLines.length);
-			while (startidx < minLen && oldMidLines[startidx] === newMidLines[startidx]) {
+			while (
+				startidx < minLen &&
+				oldMidLines[startidx] === newMidLines[startidx]
+			) {
 				startidx++;
 			}
 			const sizechange = newMidLines.length - oldMidLines.length;
@@ -114,12 +122,11 @@ const App: React.FC = () => {
 			const leftLines = splitLines(files[0].content);
 			const rightLines = splitLines(files[2].content);
 
-			differ.change_sequence(
-				1,
-				startidx,
-				sizechange,
-				[leftLines, newMidLines, rightLines],
-			);
+			differ.change_sequence(1, startidx, sizechange, [
+				leftLines,
+				newMidLines,
+				rightLines,
+			]);
 
 			const leftDiffs = differ._merge_cache
 				.map((pair) => pair[0])
@@ -202,7 +209,9 @@ const App: React.FC = () => {
 		}
 
 		const handleClipboard = (e: ClipboardEvent) => {
-			const activeEditor = editorRefs.current.find((ed) => ed?.hasWidgetFocus());
+			const activeEditor = editorRefs.current.find((ed) =>
+				ed?.hasWidgetFocus(),
+			);
 			if (!activeEditor) return;
 
 			if (e.type === "paste") {
@@ -241,7 +250,9 @@ const App: React.FC = () => {
 					e.type === "cut" &&
 					!activeEditor.getOption(monaco.editor.EditorOption.readOnly)
 				) {
-					activeEditor.executeEdits("cut", [{ range: rangeToDelete, text: "" }]);
+					activeEditor.executeEdits("cut", [
+						{ range: rangeToDelete, text: "" },
+					]);
 				}
 			}
 		};
@@ -277,8 +288,9 @@ const App: React.FC = () => {
 				sourceIsA: boolean,
 				tIndex: number,
 			): number => {
-				const maxLines = editorRefs.current[tIndex]?.getModel()?.getLineCount() || 1;
-				
+				const maxLines =
+					editorRefs.current[tIndex]?.getModel()?.getLineCount() || 1;
+
 				if (!diff || diff.length === 0) return Math.min(sLine, maxLines);
 				let lastChunk = diff[0];
 				for (const chunk of diff) {
@@ -379,85 +391,105 @@ const App: React.FC = () => {
 		[debounceDelay, files.length, commitModelUpdate],
 	);
 
-	const getHighlights = React.useCallback((paneIndex: number) => {
-		const highlights: Highlight[] = [];
-		if (files.length !== 3) return highlights;
+	const getHighlights = React.useCallback(
+		(paneIndex: number) => {
+			const highlights: Highlight[] = [];
+			if (files.length !== 3) return highlights;
 
-		const processChunk = (
-			chunk: DiffChunk,
-			isMidPane: boolean,
-			diffIndex: number
-		) => {
-			if (chunk.tag === "equal") return;
-			const startLine = isMidPane ? chunk.start_a : chunk.start_b;
-			const endLine = isMidPane ? chunk.end_a : chunk.end_b;
+			const processChunk = (
+				chunk: DiffChunk,
+				isMidPane: boolean,
+				diffIndex: number,
+			) => {
+				if (chunk.tag === "equal") return;
+				const startLine = isMidPane ? chunk.start_a : chunk.start_b;
+				const endLine = isMidPane ? chunk.end_a : chunk.end_b;
 
-			highlights.push({
-				startLine: startLine + 1,
-				startColumn: 1,
-				endLine: endLine,
-				endColumn: 1,
-				isWholeLine: true,
-				tag: chunk.tag,
-			});
+				highlights.push({
+					startLine: startLine + 1,
+					startColumn: 1,
+					endLine: endLine,
+					endColumn: 1,
+					isWholeLine: true,
+					tag: chunk.tag,
+				});
 
-			if (chunk.tag === "replace" && startLine < endLine) {
-				const outerPaneIndex = diffIndex === 0 ? 0 : 2;
-				const otherStartLine = isMidPane ? chunk.start_b : chunk.start_a;
-				const otherEndLine = isMidPane ? chunk.end_b : chunk.end_a;
+				if (chunk.tag === "replace" && startLine < endLine) {
+					const outerPaneIndex = diffIndex === 0 ? 0 : 2;
+					const otherStartLine = isMidPane ? chunk.start_b : chunk.start_a;
+					const otherEndLine = isMidPane ? chunk.end_b : chunk.end_a;
 
-				// Our text
-				const myLines = splitLines(files[paneIndex].content).slice(startLine, endLine);
-				const myText = myLines.join("\n") + (myLines.length > 0 ? "\n" : "");
+					// Our text
+					const myLines = splitLines(files[paneIndex].content).slice(
+						startLine,
+						endLine,
+					);
+					const myText = myLines.join("\n") + (myLines.length > 0 ? "\n" : "");
 
-				// Other text
-				const otherLines = splitLines(files[isMidPane ? outerPaneIndex : 1].content).slice(otherStartLine, otherEndLine);
-				const otherText = otherLines.join("\n") + (otherLines.length > 0 ? "\n" : "");
+					// Other text
+					const otherLines = splitLines(
+						files[isMidPane ? outerPaneIndex : 1].content,
+					).slice(otherStartLine, otherEndLine);
+					const otherText =
+						otherLines.join("\n") + (otherLines.length > 0 ? "\n" : "");
 
-				const changes = diffChars(myText, otherText);
-				let currentLine = startLine + 1;
-				let currentColumn = 1;
+					const changes = diffChars(myText, otherText);
+					let currentLine = startLine + 1;
+					let currentColumn = 1;
 
-				for (const change of changes) {
-					const lines = change.value.split("\n");
-					const nextLine = currentLine + lines.length - 1;
-					const nextColumn = lines.length === 1 ? currentColumn + lines[0].length : lines[lines.length - 1].length + 1;
+					for (const change of changes) {
+						const lines = change.value.split("\n");
+						const nextLine = currentLine + lines.length - 1;
+						const nextColumn =
+							lines.length === 1
+								? currentColumn + lines[0].length
+								: lines[lines.length - 1].length + 1;
 
-					// the diffChars output is relative to myText. So removed means it's in myText but not otherText
-					if (change.removed) {
-						highlights.push({
-							startLine: currentLine,
-							startColumn: currentColumn,
-							endLine: nextLine,
-							endColumn: nextColumn,
-							isWholeLine: false,
-							tag: "replace",
-						});
-					}
+						// the diffChars output is relative to myText. So removed means it's in myText but not otherText
+						if (change.removed) {
+							highlights.push({
+								startLine: currentLine,
+								startColumn: currentColumn,
+								endLine: nextLine,
+								endColumn: nextColumn,
+								isWholeLine: false,
+								tag: "replace",
+							});
+						}
 
-					// We only advance our position for text that exists in myText (removed or equal)
-					if (!change.added) {
-						currentLine = nextLine;
-						currentColumn = nextColumn;
+						// We only advance our position for text that exists in myText (removed or equal)
+						if (!change.added) {
+							currentLine = nextLine;
+							currentColumn = nextColumn;
+						}
 					}
 				}
-			}
-		};
+			};
 
-		if (paneIndex === 0 && diffs[0]) {
-			diffs[0].forEach((d) => { processChunk(d, false, 0); });
-		} else if (paneIndex === 1) {
-			if (diffs[0]) {
-				diffs[0].forEach((d) => { processChunk(d, true, 0); });
+			if (paneIndex === 0 && diffs[0]) {
+				diffs[0].forEach((d) => {
+					processChunk(d, false, 0);
+				});
+			} else if (paneIndex === 1) {
+				if (diffs[0]) {
+					diffs[0].forEach((d) => {
+						processChunk(d, true, 0);
+					});
+				}
+				if (diffs[1]) {
+					diffs[1].forEach((d) => {
+						processChunk(d, true, 1);
+					});
+				}
+			} else if (paneIndex === 2 && diffs[1]) {
+				diffs[1].forEach((d) => {
+					processChunk(d, false, 1);
+				});
 			}
-			if (diffs[1]) {
-				diffs[1].forEach((d) => { processChunk(d, true, 1); });
-			}
-		} else if (paneIndex === 2 && diffs[1]) {
-			diffs[1].forEach((d) => { processChunk(d, false, 1); });
-		}
-		return highlights;
-	}, [diffs, files]);
+			return highlights;
+		},
+		[diffs, files],
+	);
 
 	const handleApplyChunk = (paneIndex: number, chunk: DiffChunk) => {
 		const sourcePane = paneIndex === 0 ? 0 : 2;
@@ -478,14 +510,14 @@ const App: React.FC = () => {
 					startLineNumber: startLine,
 					startColumn: 1,
 					endLineNumber: endLine + 1,
-					endColumn: 1
+					endColumn: 1,
 				});
 			} else {
 				sourceText = sourceModel.getValueInRange({
 					startLineNumber: startLine,
 					startColumn: 1,
 					endLineNumber: maxEndLine,
-					endColumn: sourceModel.getLineMaxColumn(maxEndLine)
+					endColumn: sourceModel.getLineMaxColumn(maxEndLine),
 				});
 				if (chunk.end_a < mergedModel.getLineCount() && sourceText !== "") {
 					sourceText += "\n";
@@ -503,7 +535,7 @@ const App: React.FC = () => {
 			eLine = mergedMaxLine;
 			eCol = mergedModel.getLineMaxColumn(mergedMaxLine);
 		}
-		
+
 		if (startLine > mergedMaxLine) {
 			startLine = mergedMaxLine;
 			eLine = mergedMaxLine;
@@ -511,24 +543,33 @@ const App: React.FC = () => {
 			if (sourceText && !sourceText.startsWith("\n")) {
 				sourceText = `\n${sourceText}`;
 			}
-			mergedEditor.executeEdits("meld-action", [{
-				range: { startLineNumber: startLine, startColumn: maxCol, endLineNumber: eLine, endColumn: maxCol },
-				text: sourceText,
-				forceMoveMarkers: true
-			}]);
+			mergedEditor.executeEdits("meld-action", [
+				{
+					range: {
+						startLineNumber: startLine,
+						startColumn: maxCol,
+						endLineNumber: eLine,
+						endColumn: maxCol,
+					},
+					text: sourceText,
+					forceMoveMarkers: true,
+				},
+			]);
 			return;
 		}
 
-		mergedEditor.executeEdits("meld-action", [{
-			range: {
-				startLineNumber: startLine,
-				startColumn: 1,
-				endLineNumber: eLine,
-				endColumn: eCol
+		mergedEditor.executeEdits("meld-action", [
+			{
+				range: {
+					startLineNumber: startLine,
+					startColumn: 1,
+					endLineNumber: eLine,
+					endColumn: eCol,
+				},
+				text: sourceText,
+				forceMoveMarkers: true,
 			},
-			text: sourceText,
-			forceMoveMarkers: true
-		}]);
+		]);
 	};
 
 	const handleDeleteChunk = (_paneIndex: number, chunk: DiffChunk) => {
@@ -536,7 +577,7 @@ const App: React.FC = () => {
 		if (!mergedEditor) return;
 		const mergedModel = mergedEditor.getModel();
 		if (!mergedModel) return;
-		
+
 		if (chunk.start_a >= chunk.end_a) return;
 
 		let startLine = chunk.start_a + 1;
@@ -551,30 +592,34 @@ const App: React.FC = () => {
 			if (startLine > 1) {
 				startLine -= 1;
 				eCol = mergedModel.getLineMaxColumn(mergedMaxLine);
-				mergedEditor.executeEdits("meld-action", [{
-					range: {
-						startLineNumber: startLine,
-						startColumn: mergedModel.getLineMaxColumn(startLine),
-						endLineNumber: eLine,
-						endColumn: eCol
+				mergedEditor.executeEdits("meld-action", [
+					{
+						range: {
+							startLineNumber: startLine,
+							startColumn: mergedModel.getLineMaxColumn(startLine),
+							endLineNumber: eLine,
+							endColumn: eCol,
+						},
+						text: "",
+						forceMoveMarkers: true,
 					},
-					text: "",
-					forceMoveMarkers: true
-				}]);
+				]);
 				return;
 			}
 		}
 
-		mergedEditor.executeEdits("meld-action", [{
-			range: {
-				startLineNumber: startLine,
-				startColumn: 1,
-				endLineNumber: eLine,
-				endColumn: eCol
+		mergedEditor.executeEdits("meld-action", [
+			{
+				range: {
+					startLineNumber: startLine,
+					startColumn: 1,
+					endLineNumber: eLine,
+					endColumn: eCol,
+				},
+				text: "",
+				forceMoveMarkers: true,
 			},
-			text: "",
-			forceMoveMarkers: true
-		}]);
+		]);
 	};
 
 	const handleCopyUpChunk = (paneIndex: number, chunk: DiffChunk) => {
@@ -596,14 +641,14 @@ const App: React.FC = () => {
 					startLineNumber: startLine,
 					startColumn: 1,
 					endLineNumber: endLine + 1,
-					endColumn: 1
+					endColumn: 1,
 				});
 			} else {
 				sourceText = sourceModel.getValueInRange({
 					startLineNumber: startLine,
 					startColumn: 1,
 					endLineNumber: maxEndLine,
-					endColumn: sourceModel.getLineMaxColumn(maxEndLine)
+					endColumn: sourceModel.getLineMaxColumn(maxEndLine),
 				});
 				sourceText += "\n";
 			}
@@ -618,24 +663,33 @@ const App: React.FC = () => {
 			if (!sourceText.startsWith("\n")) {
 				sourceText = `\n${sourceText}`;
 			}
-			mergedEditor.executeEdits("meld-action", [{
-				range: { startLineNumber: maxLine, startColumn: maxCol, endLineNumber: maxLine, endColumn: maxCol },
-				text: sourceText,
-				forceMoveMarkers: true
-			}]);
+			mergedEditor.executeEdits("meld-action", [
+				{
+					range: {
+						startLineNumber: maxLine,
+						startColumn: maxCol,
+						endLineNumber: maxLine,
+						endColumn: maxCol,
+					},
+					text: sourceText,
+					forceMoveMarkers: true,
+				},
+			]);
 			return;
 		}
 
-		mergedEditor.executeEdits("meld-action", [{
-			range: {
-				startLineNumber: startLine,
-				startColumn: 1,
-				endLineNumber: startLine,
-				endColumn: 1
+		mergedEditor.executeEdits("meld-action", [
+			{
+				range: {
+					startLineNumber: startLine,
+					startColumn: 1,
+					endLineNumber: startLine,
+					endColumn: 1,
+				},
+				text: sourceText,
+				forceMoveMarkers: true,
 			},
-			text: sourceText,
-			forceMoveMarkers: true
-		}]);
+		]);
 	};
 
 	const handleCopyDownChunk = (paneIndex: number, chunk: DiffChunk) => {
@@ -657,14 +711,14 @@ const App: React.FC = () => {
 					startLineNumber: startLine,
 					startColumn: 1,
 					endLineNumber: endLine + 1,
-					endColumn: 1
+					endColumn: 1,
 				});
 			} else {
 				sourceText = sourceModel.getValueInRange({
 					startLineNumber: startLine,
 					startColumn: 1,
 					endLineNumber: maxEndLine,
-					endColumn: sourceModel.getLineMaxColumn(maxEndLine)
+					endColumn: sourceModel.getLineMaxColumn(maxEndLine),
 				});
 				if (chunk.end_a < mergedModel.getLineCount() && sourceText !== "") {
 					sourceText += "\n";
@@ -677,30 +731,39 @@ const App: React.FC = () => {
 		const endLine = chunk.end_a;
 		const maxLine = mergedModel.getLineCount();
 		const insertLine = endLine + 1;
-		
+
 		if (insertLine > maxLine) {
 			const maxCol = mergedModel.getLineMaxColumn(maxLine);
 			if (sourceText && !sourceText.startsWith("\n")) {
 				sourceText = `\n${sourceText}`;
 			}
-			mergedEditor.executeEdits("meld-action", [{
-				range: { startLineNumber: maxLine, startColumn: maxCol, endLineNumber: maxLine, endColumn: maxCol },
-				text: sourceText,
-				forceMoveMarkers: true
-			}]);
+			mergedEditor.executeEdits("meld-action", [
+				{
+					range: {
+						startLineNumber: maxLine,
+						startColumn: maxCol,
+						endLineNumber: maxLine,
+						endColumn: maxCol,
+					},
+					text: sourceText,
+					forceMoveMarkers: true,
+				},
+			]);
 			return;
 		}
 
-		mergedEditor.executeEdits("meld-action", [{
-			range: {
-				startLineNumber: insertLine,
-				startColumn: 1,
-				endLineNumber: insertLine,
-				endColumn: 1
+		mergedEditor.executeEdits("meld-action", [
+			{
+				range: {
+					startLineNumber: insertLine,
+					startColumn: 1,
+					endLineNumber: insertLine,
+					endColumn: 1,
+				},
+				text: sourceText,
+				forceMoveMarkers: true,
 			},
-			text: sourceText,
-			forceMoveMarkers: true
-		}]);
+		]);
 	};
 
 	const handleCopyHash = (hash: string) => {
@@ -736,7 +799,11 @@ const App: React.FC = () => {
 				`}</style>
 				{files.length === 0 ? (
 					<div
-						style={{ color: "white", padding: "20px", fontFamily: "sans-serif" }}
+						style={{
+							color: "white",
+							padding: "20px",
+							fontFamily: "sans-serif",
+						}}
 					>
 						Loading Diff...
 					</div>
@@ -754,7 +821,9 @@ const App: React.FC = () => {
 								onCopyHash={handleCopyHash}
 								onShowDiff={() => handleShowDiff(index)}
 								externalSyncId={index === 1 ? externalSyncId : undefined}
-								requestClipboardText={index === 1 ? requestClipboardText : undefined}
+								requestClipboardText={
+									index === 1 ? requestClipboardText : undefined
+								}
 								writeClipboardText={writeClipboardText}
 								syntaxHighlighting={syntaxHighlighting}
 							/>

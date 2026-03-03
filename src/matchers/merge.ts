@@ -15,9 +15,9 @@
 
 import { Differ } from "./diffutil";
 import {
-	MyersSequenceMatcher,
 	type DiffChunk,
 	type DiffChunkTag,
+	MyersSequenceMatcher,
 } from "./myers";
 
 class AutoMergeDiffer extends Differ {

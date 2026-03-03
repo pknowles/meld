@@ -1,8 +1,8 @@
 // Copyright (C) 2026 Pyarelal Knowles, GPL v2
 
+import type { editor } from "monaco-editor";
 import * as React from "react";
 import type { DiffChunk } from "./types";
-import type { editor } from "monaco-editor";
 
 interface DiffCurtainProps {
 	diffs: DiffChunk[] | undefined;
@@ -79,7 +79,7 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 					left: 0,
 					width: "100%",
 					height: "100%",
-					overflow: "visible"
+					overflow: "visible",
 				}}
 			>
 				<title>Diff Connections</title>
@@ -113,28 +113,48 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 					const rightMax = rightModel ? rightModel.getLineCount() : 1;
 
 					// When reversed, a=right and b=left; otherwise a=left and b=right
-					const leftStartLine = Math.min(leftMax, Math.max(1, (reversed ? chunk.start_b : chunk.start_a) + 1));
-					const leftEndLine = Math.min(leftMax, Math.max(1, (reversed ? chunk.end_b : chunk.end_a) + 1));
-					const rightStartLine = Math.min(rightMax, Math.max(1, (reversed ? chunk.start_a : chunk.start_b) + 1));
-					const rightEndLine = Math.min(rightMax, Math.max(1, (reversed ? chunk.end_a : chunk.end_b) + 1));
+					const leftStartLine = Math.min(
+						leftMax,
+						Math.max(1, (reversed ? chunk.start_b : chunk.start_a) + 1),
+					);
+					const leftEndLine = Math.min(
+						leftMax,
+						Math.max(1, (reversed ? chunk.end_b : chunk.end_a) + 1),
+					);
+					const rightStartLine = Math.min(
+						rightMax,
+						Math.max(1, (reversed ? chunk.start_a : chunk.start_b) + 1),
+					);
+					const rightEndLine = Math.min(
+						rightMax,
+						Math.max(1, (reversed ? chunk.end_a : chunk.end_b) + 1),
+					);
 
-					const leftEmpty = reversed ? chunk.start_b === chunk.end_b : chunk.start_a === chunk.end_a;
-					const rightEmpty = reversed ? chunk.start_a === chunk.end_a : chunk.start_b === chunk.end_b;
+					const leftEmpty = reversed
+						? chunk.start_b === chunk.end_b
+						: chunk.start_a === chunk.end_a;
+					const rightEmpty = reversed
+						? chunk.start_a === chunk.end_a
+						: chunk.start_b === chunk.end_b;
 
 					const y1Top =
 						leftEditor.getTopForLineNumber(leftStartLine) -
-						leftEditor.getScrollTop() + headerOffset;
+						leftEditor.getScrollTop() +
+						headerOffset;
 					let y1Bottom =
 						leftEditor.getTopForLineNumber(leftEndLine) -
-						leftEditor.getScrollTop() + headerOffset;
+						leftEditor.getScrollTop() +
+						headerOffset;
 					if (leftEmpty) y1Bottom = y1Top;
 
 					const y2Top =
 						rightEditor.getTopForLineNumber(rightStartLine) -
-						rightEditor.getScrollTop() + headerOffset;
+						rightEditor.getScrollTop() +
+						headerOffset;
 					let y2Bottom =
 						rightEditor.getTopForLineNumber(rightEndLine) -
-						rightEditor.getScrollTop() + headerOffset;
+						rightEditor.getScrollTop() +
+						headerOffset;
 					if (rightEmpty) y2Bottom = y2Top;
 
 					const path = `M 0,${y1Top} C ${curveOffset},${y1Top} ${width - curveOffset},${y2Top} ${width},${y2Top} L ${width},${y2Bottom} C ${width - curveOffset},${y2Bottom} ${curveOffset},${y1Bottom} 0,${y1Bottom} Z`;
@@ -156,14 +176,16 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 					const isReplace = chunk.tag === "replace";
 					const canApply = isReplace || chunk.start_b < chunk.end_b;
 					const canDelete = isReplace || chunk.start_a < chunk.end_a;
-					
+
 					const applySide = reversed ? "left" : "right";
 					const deleteSide = reversed ? "right" : "left";
 
 					const btnSize = 16;
 					const btnMargin = 3;
-					const applyX = applySide === "left" ? btnMargin : width - btnSize - btnMargin;
-					const deleteX = deleteSide === "left" ? btnMargin : width - btnSize - btnMargin;
+					const applyX =
+						applySide === "left" ? btnMargin : width - btnSize - btnMargin;
+					const deleteX =
+						deleteSide === "left" ? btnMargin : width - btnSize - btnMargin;
 
 					const baseApplyY = applySide === "left" ? y1Top : y2Top;
 					const baseDeleteY = deleteSide === "left" ? y1Top : y2Top;
@@ -174,7 +196,10 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 					const deleteY = baseDeleteY + btnMargin;
 
 					return (
-						<g key={`${chunk.start_a}-${chunk.end_a}-${chunk.start_b}-${chunk.end_b}`} className="diff-container">
+						<g
+							key={`${chunk.start_a}-${chunk.end_a}-${chunk.start_b}-${chunk.end_b}`}
+							className="diff-container"
+						>
 							<path
 								d={path}
 								fill={color}
@@ -182,7 +207,13 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 								strokeWidth="1"
 							/>
 							{canApply && onCopyUpChunk && isReplace && (
-								<foreignObject x={applyX} y={upY} width="16" height="16" className="diff-btn-container">
+								<foreignObject
+									x={applyX}
+									y={upY}
+									width="16"
+									height="16"
+									className="diff-btn-container"
+								>
 									<button
 										type="button"
 										className="diff-btn"
@@ -194,7 +225,13 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 								</foreignObject>
 							)}
 							{canApply && onApplyChunk && (
-								<foreignObject x={applyX} y={repY} width="16" height="16" className="diff-btn-container">
+								<foreignObject
+									x={applyX}
+									y={repY}
+									width="16"
+									height="16"
+									className="diff-btn-container"
+								>
 									<button
 										type="button"
 										className="diff-btn"
@@ -206,7 +243,13 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 								</foreignObject>
 							)}
 							{canApply && onCopyDownChunk && isReplace && (
-								<foreignObject x={applyX} y={downY} width="16" height="16" className="diff-btn-container">
+								<foreignObject
+									x={applyX}
+									y={downY}
+									width="16"
+									height="16"
+									className="diff-btn-container"
+								>
 									<button
 										type="button"
 										className="diff-btn"
@@ -218,7 +261,13 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 								</foreignObject>
 							)}
 							{canDelete && onDeleteChunk && (
-								<foreignObject x={deleteX} y={deleteY} width="16" height="16" className="diff-btn-container">
+								<foreignObject
+									x={deleteX}
+									y={deleteY}
+									width="16"
+									height="16"
+									className="diff-btn-container"
+								>
 									<button
 										type="button"
 										className="diff-btn diff-cross-icon"
