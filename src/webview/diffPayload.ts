@@ -134,9 +134,9 @@ export async function buildDiffPayload(
 	}
 
 	const contents = [
-		{ label: "Local (Ours)", content: local, commit: localCommit },
+		{ label: "Local", content: local, commit: localCommit },
 		{ label: "Merged", content: mergedContent },
-		{ label: "Incoming (Theirs)", content: incoming, commit: incomingCommit },
+		{ label: "Remote", content: incoming, commit: incomingCommit },
 	];
 
 	// Extract from _merge_cache, not differ.diffs.

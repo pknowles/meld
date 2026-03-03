@@ -1,38 +1,62 @@
 # Meld 3-Way Merge for VS Code
 
-![Meld Extension Three-Way View](./docs/screenshot_meld_conflicteg.png)
-*Our extension presents an intuitive layout, clear connections, and can automatically resolve conflicts that standard git tools miss.*
+[![Install](https://img.shields.io/badge/VS%20Code-Install%20Extension-blue?logo=visualstudiocode)](https://marketplace.visualstudio.com/items?itemName=pknowles.meld-auto-merge)
+![Installs](https://img.shields.io/visual-studio-marketplace/i/pknowles.meld-auto-merge?style=flat-square)
+![Rating](https://img.shields.io/visual-studio-marketplace/r/pknowles.meld-auto-merge)
+![Build](https://github.com/pknowles/meld/actions/workflows/ci.yml/badge.svg)
+![Verified](https://img.shields.io/badge/publisher-verified-brightgreen)
+![License](https://img.shields.io/github/license/pknowles/meld)
 
-This extension brings the power of [Meld's](https://meldmerge.org/) intuitive 3-way merge view and advanced auto-merge heuristics directly into Visual Studio Code.
+![Meld Extension Three-Way View](./images/screenshot_meld_conflicteg.png)
+*Boost developer productivity with an intuitive layout, clear connections, and automated resolutions that standard git tools miss.*
+
+This extension brings the power of [Meld's](https://meldmerge.org/) intuitive frontend diff viewer and advanced auto-merge heuristics directly into Visual Studio Code. If you're looking for a dedicated 3-way merge tool and superior Git merge conflict resolution, this Visual Studio Code Git extension provides an unmatched developer experience.
+
+## Table of Contents
+- [Alpha Release Notice](#️-alpha-release-notice)
+- [Installation](#installation)
+- [Why Use This?](#why-use-this)
+- [Features](#features)
+- [How It Works](#how-it-works)
+- [How to Use the Extension](#how-to-use-the-extension)
+- [Configuration Settings](#configuration-settings)
+- [Developer Setup](#developer-setup)
+- [Credits](#credits)
+- [License](#license)
+- [Feedback & Support](#feedback--support)
 
 ## ⚠️ Alpha Release Notice
 
 This extension is currently in **alpha**.
 
-It is very early in development and the codebase is still brand new. Features may be incomplete, behavior may change without notice, and **bugs are expected**.
+While the core Meld algorithms have been carefully ported and tested, the VS Code UI integration is under active development. Features may be incomplete, behavior may change without notice, and **bugs are expected**.
 
-Please only try this release if:
-
-- You’re comfortable testing early-stage software  
-- Your work is properly backed up  
-- You’re okay with potential instability or unexpected behavior  
-
-If you encounter issues, feedback is welcome — but don’t be surprised if things break. That’s part of the alpha process.
-
-Yes, this is written with AI. Even though under my guidance, it still does a lot of really dumb stuff and it's really hard forcing it not to.
+Please review your merges carefully and report any bugs you find!
 
 Use at your own discretion.
+
+## Installation
+
+As this extension is currently in Alpha, it may not be published to the public VS Code Marketplace.
+
+Currently, you must download the `.vsix` file from the [GitHub Releases](https://github.com/pknowles/meld/releases) page and install it manually:
+
+1. Download the latest `meld-auto-merge*.vsix` file.
+2. In VS Code, open the Extensions view (`Ctrl+Shift+X`).
+3. Click the "..." menu in the top-right corner.
+4. Select **Install from VSIX...**
+5. Locate the downloaded file and click Install.
 
 ## Why Use This?
 
 VS Code's built-in Git conflict resolution is excellent, but its standard interface can sometimes be visually noisy and challenging to navigate during complex merges:
 
-![VS Code Default (noisy)](./docs/screenshot_vscode_default.png)
+![VS Code Default (noisy)](./images/screenshot_vscode_default.png)
 *Standard VS Code 3-way view.*
 
 Even the improved built-in 3-way view can still feel less intuitive than dedicated desktop tools like Meld:
 
-![VS Code Three-Way View](./docs/screenshot_vscode_threeway.png)
+![VS Code Three-Way View](./images/screenshot_vscode_threeway.png)
 *Improved VS Code 3-way view.*
 
 **Meld for VS Code** provides a cleaner, dedicated 3-way merge editor modeled right after the Meld application. Beyond the improved UI, it brings Meld's highly-tuned conflict resolution algorithm that is capable of:
@@ -43,7 +67,7 @@ Even the improved built-in 3-way view can still feel less intuitive than dedicat
 
 The end result? An intuitive merge experience that handles the tedious work for you.
 
-![Teaser](./docs/screenshot_meld_threeway.png)
+![Teaser](./images/screenshot_meld_threeway.png)
 *Conflict resolution made intuitive – Meld resolves conflicts automatically when VS Code cannot.*
 
 ## Features
@@ -72,44 +96,86 @@ This includes:
 
 The logic runs entirely within the VS Code extension host process—no Python installation or background daemons required.
 
-## Getting Started
+## How to Use the Extension
 
-1. Open a project with Git merge conflicts.
-2. Find the conflicted file in the SCM panel or the new "Meld Conflicted Files" view.
-3. Open it in the 3-Way Merge Editor. 
-4. Watch as the robust heuristics auto-resolve many blocks for you, leaving only the complex decisions for you to handle through the intuitive UI!
+### From the Source Control Tab
+1. Open a project that currently has Git merge conflicts.
+2. Click on the Source Control icon in your Activity Bar (or press `Ctrl+Shift+G`).
+3. Under the standard "Source Control" view, you will see a new collapsible section titled **Meld Merge : Conflicted Files**.
+4. Expanding this tab will show a list of all files currently marked as conflicted.
+5. Hover over any conflicted file in this list to reveal its inline action buttons:
+   - 🔀 **Open Custom Merge** (`Meld: Open Custom Merge`): Opens the file in the dedicated 3-way interactive Meld interface.
+   - 🚀 **Checkout Conflicted (-m)**: Quickly resets any botched manual merge attempts in the file back to its original raw conflicted state via `git checkout -m`.
+   - 🧠 **Rerere Forget File**: Discards any saved `git-rerere` resolutions for the file.
+   - ✅ **Git Add Resolved**: A "smart add" button that verifying absolutely no conflict markers (`<<<<<<<`, `======`, `>>>>>>>`) remain in the text before safely staging the file.
+
+### From the Command Palette (`Ctrl+Shift+P`)
+If you already have a conflicted file actively open in your regular VS Code editor:
+1. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac) to open the Command Palette.
+2. Type **Meld: Open Custom Merge** and hit Enter.
+3. The custom 3-way merge viewer will open up immediately for that file.
+4. *(Optional)* Alternatively, you can run the **Meld: Auto-Merge Current File** command to bypass the UI entirely and let Meld's highly optimized algorithm attempt to resolve the merge automatically.
+
+## Configuration Settings
+
+You can customize the extension using the following VS Code settings (accessible via `File > Preferences > Settings`):
+
+| Setting | Default | Description |
+|---|---|---|
+| `meld.mergeEditor.debounceDelay` | `300` | Delay in milliseconds before recomputing diff highlights while typing. |
+| `meld.mergeEditor.syntaxHighlighting` | `true` | Enable or disable syntax highlighting in the merge editor. |
+
+### Theme Colors
+
+All diff highlight colors are fully themeable via the workbench `colorCustomizations` setting in your `settings.json`:
+
+| Color Token | Default | Description |
+|---|---|---|
+| `meldMerge.diffInsertBackground` | `#00c80026` | Background for inserted lines. |
+| `meldMerge.diffDeleteBackground` | `#00c80026` | Background for deleted lines. |
+| `meldMerge.diffReplaceBackground` | `#0064ff26` | Background for replaced lines. |
+| `meldMerge.diffReplaceInlineBackground` | `#0064ff59` | Highlight for inline changed text within replaced lines. |
+| `meldMerge.diffConflictBackground` | `#ff000026` | Background for unresolved conflict lines. |
+| `meldMerge.diffCurtainInsertFill` | `#00c80033` | Fill color for insert regions in the connecting curtain SVG. |
+| `meldMerge.diffCurtainInsertStroke` | `#00c80080` | Stroke color for insert regions in the connecting curtain SVG. |
+| `meldMerge.diffCurtainReplaceFill` | `#0064ff33` | Fill color for replace regions in the connecting curtain SVG. |
+| `meldMerge.diffCurtainReplaceStroke` | `#0064ff80` | Stroke color for replace regions in the connecting curtain SVG. |
+| `meldMerge.diffCurtainConflictFill` | `#ff000033` | Fill color for conflict regions in the connecting curtain SVG. |
+| `meldMerge.diffCurtainConflictStroke` | `#ff000080` | Stroke color for conflict regions in the connecting curtain SVG. |
+
+Example `settings.json` snippet to tweak colors:
+
+```json
+"workbench.colorCustomizations": {
+    "meldMerge.diffConflictBackground": "#ff00001a",
+    "meldMerge.diffInsertBackground": "#00ff001a"
+}
+```
 
 ## Developer Setup
 
-To run this extension locally for development or testing:
+To run this extension locally:
 
-1. **Clone the repository.**
-2. **Navigate to the extension directory**:
-   ```bash
-   cd vscode-extension
-   ```
-3. **Install dependencies**:
+1. **Clone the repository** and open the root folder in VS Code.
+2. **Install dependencies**:
    ```bash
    npm install
    ```
-4. **Compile the extension**:
+3. **Compile the extension**:
    ```bash
    npm run compile
    ```
-5. **Launch in VS Code**:
-   - Open the `vscode-extension` folder in VS Code.
-   - Press `F5` to open a new "Extension Development Host" window with the extension loaded.
+4. **Launch**: Press `F5` to open an "Extension Development Host" window with the extension loaded.
 
-### Testing and Packaging
+### Testing & Packaging
 
-We use Jest to verify the TypeScript port against Meld's original logic:
+We use Jest to verify the TypeScript port against Meld's original Python logic:
 
 ```bash
-cd vscode-extension
-npm test
-npm lint
-npm compile
-npx vsce package
+npm test         # run unit tests
+npm run lint     # lint and format check
+npm run compile  # type-check
+npx vsce package # build the .vsix
 ```
 
 ## Credits
@@ -125,3 +191,8 @@ excellent merge experience into the VS Code ecosystem.
 ## License
 
 GPL Version 2; see [LICENSE](LICENSE).
+
+## Feedback & Support
+
+If you encounter a bug, have a feature request, or just want to share feedback, please file an issue on our GitHub repository at:  
+[https://github.com/pknowles/meld/issues](https://github.com/pknowles/meld/issues)
