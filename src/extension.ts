@@ -167,21 +167,11 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 
 			try {
-				const baseContent = await getGitFileContent(
-					repoPath,
-					relativeFilePath,
-					1,
-				);
-				const localContent = await getGitFileContent(
-					repoPath,
-					relativeFilePath,
-					2,
-				);
-				const remoteContent = await getGitFileContent(
-					repoPath,
-					relativeFilePath,
-					3,
-				);
+				const [baseContent, localContent, remoteContent] = await Promise.all([
+					getGitFileContent(repoPath, relativeFilePath, 1),
+					getGitFileContent(repoPath, relativeFilePath, 2),
+					getGitFileContent(repoPath, relativeFilePath, 3),
+				]);
 
 				vscode.window.showInformationMessage(
 					"Running Meld auto-merge heuristics...",

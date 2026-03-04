@@ -44,9 +44,11 @@ export async function buildDiffPayload(
 		});
 	};
 
-	const base = await getGitState(1);
-	const local = await getGitState(2);
-	const incoming = await getGitState(3);
+	const [base, local, incoming] = await Promise.all([
+		getGitState(1),
+		getGitState(2),
+		getGitState(3),
+	]);
 
 	const getCommitInfo = async (
 		ref: string,
