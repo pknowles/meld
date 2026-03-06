@@ -28,7 +28,7 @@ jobs:
         run: npm run lint
 
       - name: Type-check & compile
-        run: npm run compile
+        run: npm run build
 
       - name: Run unit tests
         run: npm test

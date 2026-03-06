@@ -20,94 +20,124 @@ import { getGitExecutable } from "../gitPath";
 import { Differ } from "../matchers/diffutil";
 import { Merger } from "../matchers/merge";
 
+const getGitState = async (
+	repoPath: string,
+	relativeFilePath: string,
+	stage: number,
+): Promise<string> => {
+	const gitCmd = await getGitExecutable();
+	return new Promise<string>((resolve) => {
+		cp.execFile(
+			gitCmd,
+			["show", `:${stage}:${relativeFilePath}`],
+			{ cwd: repoPath },
+			(err, stdout) => {
+				if (err) {
+					resolve("");
+				} else {
+					resolve(stdout);
+				}
+			},
+		);
+	});
+};
+
+const getCommitInfo = async (
+	repoPath: string,
+	ref: string,
+): Promise<
+	| {
+			hash: string;
+			title: string;
+			authorName: string;
+			authorEmail: string;
+			date: string;
+			body: string;
+	  }
+	| undefined
+> => {
+	const gitCmd = await getGitExecutable();
+	return new Promise((resolve) => {
+		cp.execFile(
+			gitCmd,
+			["log", "-1", "--format=%H%x00%s%x00%an%x00%ae%x00%aI%x00%b", ref],
+			{ cwd: repoPath },
+			(err, stdout) => {
+				if (err) {
+					resolve(undefined);
+				} else {
+					const parts = stdout.trim().split("\0");
+					if (parts.length < 5) resolve(undefined);
+					else
+						resolve({
+							hash: parts[0],
+							title: parts[1],
+							authorName: parts[2],
+							authorEmail: parts[3],
+							date: parts[4],
+							body: parts.slice(5).join("\0"),
+						});
+				}
+			},
+		);
+	});
+};
+
+const getRemoteRef = async (repoPath: string): Promise<string | undefined> => {
+	const refs = ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "REBASE_HEAD"];
+	for (const ref of refs) {
+		const commit = await getCommitInfo(repoPath, ref);
+		if (commit) return ref;
+	}
+	return undefined;
+};
+
+const getBaseCommitInfo = async (repoPath: string) => {
+	const remoteRef = await getRemoteRef(repoPath);
+	if (!remoteRef) return undefined;
+
+	const gitCmd = await getGitExecutable();
+	const mergeBaseHash = await new Promise<string>((resolve) => {
+		cp.execFile(
+			gitCmd,
+			["merge-base", "HEAD", remoteRef],
+			{ cwd: repoPath },
+			(err, stdout) => {
+				if (err) resolve("");
+				else resolve(stdout.trim());
+			},
+		);
+	});
+
+	if (mergeBaseHash) {
+		return await getCommitInfo(repoPath, mergeBaseHash);
+	}
+	return undefined;
+};
+
+const splitLines = (text: string) => {
+	const lines = text.split("\n");
+	if (lines.length > 0 && lines[lines.length - 1] === "") {
+		lines.pop();
+	}
+	return lines;
+};
+
 export async function buildDiffPayload(
 	repoPath: string,
 	relativeFilePath: string,
 ) {
-	const getGitState = async (stage: number): Promise<string> => {
-		const gitCmd = await getGitExecutable();
-		return new Promise<string>((resolve) => {
-			// The official vscode.git extension API does not provide a direct way to fetch a specific git stage
-			// without creating a GitUri and opening a document. We just need the raw string content here.
-			// 'stage' is a hardcoded integer, and 'relativeFilePath' is passed directly as an array argument to
-			// execFile, preventing any shell-based command injection.
-			cp.execFile(
-				gitCmd,
-				["show", `:${stage}:${relativeFilePath}`],
-				{ cwd: repoPath },
-				(err, stdout) => {
-					if (err) {
-						resolve(""); // return empty string silently if stage doesn't exist
-					} else {
-						resolve(stdout);
-					}
-				},
-			);
-		});
-	};
-
 	const [base, local, incoming] = await Promise.all([
-		getGitState(1),
-		getGitState(2),
-		getGitState(3),
+		getGitState(repoPath, relativeFilePath, 1),
+		getGitState(repoPath, relativeFilePath, 2),
+		getGitState(repoPath, relativeFilePath, 3),
 	]);
 
-	const getCommitInfo = async (
-		ref: string,
-	): Promise<
-		| {
-				hash: string;
-				title: string;
-				authorName: string;
-				authorEmail: string;
-				date: string;
-				body: string;
-		  }
-		| undefined
-	> => {
-		const gitCmd = await getGitExecutable();
-		return new Promise((resolve) => {
-			// We need specific formatting for the commit log separated by null bytes to parse it reliably.
-			// The vscode.git API's log method doesn't easily return custom formats.
-			// 'ref' comes from either our controlled "HEAD" or stage numbers, so it is safe.
-			cp.execFile(
-				gitCmd,
-				["log", "-1", "--format=%H%x00%s%x00%an%x00%ae%x00%aI%x00%b", ref],
-				{ cwd: repoPath },
-				(err, stdout) => {
-					if (err) {
-						resolve(undefined);
-					} else {
-						const parts = stdout.trim().split("\0");
-						if (parts.length < 5) resolve(undefined);
-						else
-							resolve({
-								hash: parts[0],
-								title: parts[1],
-								authorName: parts[2],
-								authorEmail: parts[3],
-								date: parts[4],
-								body: parts.slice(5).join("\0"),
-							});
-					}
-				},
-			);
-		});
-	};
-
-	const localCommit = await getCommitInfo("HEAD");
-	let incomingCommit = await getCommitInfo("MERGE_HEAD");
-	if (!incomingCommit) incomingCommit = await getCommitInfo("CHERRY_PICK_HEAD");
-	if (!incomingCommit) incomingCommit = await getCommitInfo("REVERT_HEAD");
-	if (!incomingCommit) incomingCommit = await getCommitInfo("REBASE_HEAD");
-
-	const splitLines = (text: string) => {
-		const lines = text.split("\n");
-		if (lines.length > 0 && lines[lines.length - 1] === "") {
-			lines.pop();
-		}
-		return lines;
-	};
+	const localCommit = await getCommitInfo(repoPath, "HEAD");
+	const remoteRef = await getRemoteRef(repoPath);
+	const incomingCommit = remoteRef
+		? await getCommitInfo(repoPath, remoteRef)
+		: undefined;
 
 	const localLines = splitLines(local);
 	const baseLines = splitLines(base);
@@ -171,6 +201,51 @@ export async function buildDiffPayload(
 		data: {
 			files: contents,
 			diffs: [leftDiffs, rightDiffs],
+		},
+	};
+}
+
+import { MyersSequenceMatcher } from "../matchers/myers";
+
+export async function buildBaseDiffPayload(
+	repoPath: string,
+	relativeFilePath: string,
+	side: "left" | "right",
+) {
+	// Base is stage 1, Local is 2, Remote is 3
+	const targetStage = side === "left" ? 2 : 3;
+	const [base, target] = await Promise.all([
+		getGitState(repoPath, relativeFilePath, 1),
+		getGitState(repoPath, relativeFilePath, targetStage),
+	]);
+
+	const baseCommit = await getBaseCommitInfo(repoPath);
+
+	const baseLines = splitLines(base);
+	const targetLines = splitLines(target);
+
+	// We only need a 2-way diff for this.
+	// For left side (Base -> Local), a=Base, b=Local
+	// For right side (Remote <- Base), a=Remote, b=Base
+	const seqA = side === "left" ? baseLines : targetLines;
+	const seqB = side === "left" ? targetLines : baseLines;
+
+	const matcher = new MyersSequenceMatcher(null, seqA, seqB);
+	const work = matcher.initialise();
+	while (!work.next().done) {}
+
+	const diffs = matcher.get_difference_opcodes();
+
+	return {
+		command: "loadBaseDiff",
+		data: {
+			side,
+			file: {
+				label: "Base",
+				content: base,
+				commit: baseCommit,
+			},
+			diffs,
 		},
 	};
 }

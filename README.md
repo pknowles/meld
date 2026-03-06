@@ -100,7 +100,7 @@ remote versions with clear visual connections to the merged output.
 The highlighted colors represent:
 
 - **Red** - Conflicts that need your attention.
-- **Green** - Simple additions and deletions.
+- **Green** - Simple additions and deletions (if you want separate, you can override them).
 - **Blue** - Rewritten lines that are not conflicts.
 
 ### Auto-Merge
@@ -183,6 +183,8 @@ All diff highlight colors are fully themeable via the workbench `colorCustomizat
 | `meldMerge.diffConflictBackground` | `#ff000026` | Background for unresolved conflict lines. |
 | `meldMerge.diffCurtainInsertFill` | `#00c80033` | Fill color for insert regions in the connecting curtain SVG. |
 | `meldMerge.diffCurtainInsertStroke` | `#00c80080` | Stroke color for insert regions in the connecting curtain SVG. |
+| `meldMerge.diffCurtainDeleteFill` | `#00c80033` | Fill color for delete regions in the connecting curtain SVG. |
+| `meldMerge.diffCurtainDeleteStroke` | `#00c80080` | Stroke color for delete regions in the connecting curtain SVG. |
 | `meldMerge.diffCurtainReplaceFill` | `#0064ff33` | Fill color for replace regions in the connecting curtain SVG. |
 | `meldMerge.diffCurtainReplaceStroke` | `#0064ff80` | Stroke color for replace regions in the connecting curtain SVG. |
 | `meldMerge.diffCurtainConflictFill` | `#ff000033` | Fill color for conflict regions in the connecting curtain SVG. |

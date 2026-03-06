@@ -79,6 +79,9 @@ interface CodePaneProps {
 	requestClipboardText?: () => Promise<string>;
 	writeClipboardText?: (text: string) => void;
 	syntaxHighlighting?: boolean;
+	onToggleBase?: () => void;
+	baseSide?: "left" | "right";
+	isBaseActive?: boolean;
 }
 
 export const CodePane: React.FC<CodePaneProps> = ({
@@ -95,6 +98,9 @@ export const CodePane: React.FC<CodePaneProps> = ({
 	requestClipboardText,
 	writeClipboardText,
 	syntaxHighlighting = true,
+	onToggleBase,
+	baseSide,
+	isBaseActive = false,
 }) => {
 	const [editorInstance, setEditorInstance] =
 		React.useState<editor.IStandaloneCodeEditor | null>(null);
@@ -170,6 +176,10 @@ export const CodePane: React.FC<CodePaneProps> = ({
 					isWholeLine: h.isWholeLine,
 					className: h.isWholeLine ? `diff-${h.tag}` : undefined,
 					inlineClassName: !h.isWholeLine ? `diff-${h.tag}-inline` : undefined,
+					linesDecorationsClassName: h.isWholeLine
+						? `diff-${h.tag}-margin`
+						: undefined,
+					marginClassName: h.isWholeLine ? `diff-${h.tag}-margin` : undefined,
 				},
 			}));
 
@@ -306,13 +316,50 @@ export const CodePane: React.FC<CodePaneProps> = ({
 					justifyContent: "center",
 					backgroundColor: "#2d2d2d",
 					color: "#cccccc",
-					padding: "8px",
+					padding: "0 8px",
+					height: "35px",
+					boxSizing: "border-box",
 					fontFamily: "sans-serif",
 					fontSize: "12px",
 					borderBottom: "1px solid #444",
 					minWidth: 0,
 				}}
 			>
+				{onToggleBase && baseSide === "left" && (
+					<button
+						type="button"
+						onClick={onToggleBase}
+						title="Toggle compare with Base"
+						style={{
+							background: "none",
+							border: "none",
+							color: isBaseActive
+								? "var(--vscode-textLink-foreground, #3794ff)"
+								: "inherit",
+							cursor: "pointer",
+							display: "flex",
+							alignItems: "center",
+							padding: "4px",
+							marginRight: "8px",
+							opacity: isBaseActive ? 1 : 0.6,
+						}}
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 16 16"
+							xmlns="http://www.w3.org/2000/svg"
+							fill="currentColor"
+						>
+							<title>Compare with Base</title>
+							<path
+								fillRule="evenodd"
+								clipRule="evenodd"
+								d="M2 2h12v12H2V2zm-1 0a1 1 0 011-1h12a1 1 0 011 1v12a1 1 0 01-1 1H2a1 1 0 01-1-1V2zm3 1v10h3V3H4z"
+							/>
+						</svg>
+					</button>
+				)}
 				<span style={{ flexShrink: 0 }}>{file.label}</span>
 				{file.commit && (
 					<button
@@ -463,6 +510,42 @@ export const CodePane: React.FC<CodePaneProps> = ({
 								)}
 							</div>
 						)}
+					</button>
+				)}
+				<div style={{ flex: 1 }} />
+				{onToggleBase && baseSide === "right" && (
+					<button
+						type="button"
+						onClick={onToggleBase}
+						title="Toggle compare with Base"
+						style={{
+							background: "none",
+							border: "none",
+							color: isBaseActive
+								? "var(--vscode-textLink-foreground, #3794ff)"
+								: "inherit",
+							cursor: "pointer",
+							display: "flex",
+							alignItems: "center",
+							padding: "4px",
+							marginLeft: "8px",
+							opacity: isBaseActive ? 1 : 0.6,
+						}}
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 16 16"
+							xmlns="http://www.w3.org/2000/svg"
+							fill="currentColor"
+						>
+							<title>Compare with Base</title>
+							<path
+								fillRule="evenodd"
+								clipRule="evenodd"
+								d="M14 2H2v12h12V2zM1 2a1 1 0 011-1h12a1 1 0 011 1v12a1 1 0 01-1 1H2a1 1 0 01-1-1V2zm11 1v10H9V3h3z"
+							/>
+						</svg>
 					</button>
 				)}
 			</div>

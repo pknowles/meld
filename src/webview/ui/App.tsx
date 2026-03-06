@@ -25,7 +25,7 @@ import { Differ } from "../../matchers/diffutil";
 import { CodePane } from "./CodePane";
 import { DiffCurtain } from "./DiffCurtain";
 import { ErrorBoundary } from "./ErrorBoundary";
-import type { DiffChunk, FileState, Highlight } from "./types";
+import type { BaseDiffPayload, DiffChunk, FileState, Highlight } from "./types";
 import { useClipboardOverrides } from "./useClipboardOverrides";
 import { useSynchronizedScrolling } from "./useSynchronizedScrolling";
 import { useVSCodeMessageBus } from "./useVSCodeMessageBus";
@@ -42,14 +42,18 @@ const splitLines = (text: string) => {
 };
 
 const App: React.FC = () => {
-	const [files, setFiles] = useState<FileState[]>([]);
-	const filesRef = useRef<FileState[]>([]);
-	const [diffs, setDiffs] = useState<DiffChunk[][]>([]);
-	const diffsRef = useRef<DiffChunk[][]>([]);
+	// files length is now always 5: [Base(left), Local, Merged, Remote, Base(right)]
+	// Base slots start as null.
+	const [files, setFiles] = useState<(FileState | null)[]>([]);
+	const filesRef = useRef<(FileState | null)[]>([]);
+	// diffs connects files 0-1, 1-2, 2-3, 3-4
+	const [diffs, setDiffs] = useState<(DiffChunk[] | null)[]>([]);
+	const diffsRef = useRef<(DiffChunk[] | null)[]>([]);
 	const differRef = useRef<Differ | null>(null);
 	const [externalSyncId, setExternalSyncId] = useState(0);
 	const [debounceDelay, setDebounceDelay] = useState(300);
 	const [syntaxHighlighting, setSyntaxHighlighting] = useState(true);
+	const [baseCompareHighlighting, setBaseCompareHighlighting] = useState(false);
 	const [renderTrigger, setRenderTrigger] = useState(0);
 	const editorRefs = useRef<editor.IStandaloneCodeEditor[]>([]);
 
@@ -68,12 +72,15 @@ const App: React.FC = () => {
 		// diffs to become undefined for a frame, DiffCurtain early-outs to null, and
 		// the entire UI goes blank.
 		const files = filesRef.current;
-		if (!files || files.length !== 3) return;
+		const localFile = files[1];
+		const midFile = files[2];
+		const rightFile = files[3];
+		if (!files || !localFile || !midFile || !rightFile) return;
 
-		const oldMidLines = splitLines(files[1].content);
+		const oldMidLines = splitLines(midFile.content);
 		const newMidLines = splitLines(value);
 
-		let newDiffs: DiffChunk[][] | null = null;
+		let newDiffs: (DiffChunk[] | null)[] | null = null;
 		const differ = differRef.current;
 		if (differ) {
 			let startidx = 0;
@@ -86,8 +93,8 @@ const App: React.FC = () => {
 			}
 			const sizechange = newMidLines.length - oldMidLines.length;
 
-			const leftLines = splitLines(files[0].content);
-			const rightLines = splitLines(files[2].content);
+			const leftLines = splitLines(localFile.content);
+			const rightLines = splitLines(rightFile.content);
 
 			differ.change_sequence(1, startidx, sizechange, [
 				leftLines,
@@ -101,12 +108,15 @@ const App: React.FC = () => {
 			const rightDiffs = differ._merge_cache
 				.map((pair) => pair[1])
 				.filter((c): c is NonNullable<typeof c> => c !== null);
-			newDiffs = [leftDiffs, rightDiffs];
+			// Replace the inner diffs [1] and [2] while keeping [0] and [3]
+			newDiffs = [...diffsRef.current];
+			newDiffs[1] = leftDiffs;
+			newDiffs[2] = rightDiffs;
 			diffsRef.current = newDiffs;
 		}
 
 		const newFiles = [...files];
-		newFiles[1] = { ...newFiles[1], content: value };
+		newFiles[2] = { ...midFile, content: value };
 		filesRef.current = newFiles;
 		setFiles(newFiles);
 		if (newDiffs !== null) {
@@ -119,10 +129,25 @@ const App: React.FC = () => {
 		const handleMessage = (event: MessageEvent) => {
 			const message = event.data;
 			if (message.command === "loadDiff") {
-				filesRef.current = message.data.files;
-				setFiles(message.data.files);
-				setDiffs(message.data.diffs);
-				diffsRef.current = message.data.diffs;
+				// Initialize the 5-element array with nulls for the Base slots
+				const initialFiles = [
+					null,
+					message.data.files[0],
+					message.data.files[1],
+					message.data.files[2],
+					null,
+				];
+				const initialDiffs = [
+					null,
+					message.data.diffs[0],
+					message.data.diffs[1],
+					null,
+				];
+
+				filesRef.current = initialFiles;
+				setFiles(initialFiles);
+				setDiffs(initialDiffs);
+				diffsRef.current = initialDiffs;
 				// We bump externalSyncId here because a loadDiff is conceptually an external sync
 				// from the extension that provides entirely new file contents we need to push into Monaco
 				// via computeMinimalEdits, preserving the undo stack.
@@ -132,6 +157,11 @@ const App: React.FC = () => {
 				}
 				if (message.data.config?.syntaxHighlighting !== undefined) {
 					setSyntaxHighlighting(message.data.config.syntaxHighlighting);
+				}
+				if (message.data.config?.baseCompareHighlighting !== undefined) {
+					setBaseCompareHighlighting(
+						message.data.config.baseCompareHighlighting,
+					);
 				}
 
 				const localLines = splitLines(message.data.files[0].content);
@@ -151,6 +181,25 @@ const App: React.FC = () => {
 				differRef.current = differ;
 
 				setTimeout(() => setRenderTrigger((prev) => prev + 1), 500);
+			} else if (message.command === "loadBaseDiff") {
+				const {
+					side,
+					file,
+					diffs: payloadDiffs,
+				} = message.data as BaseDiffPayload;
+
+				const newFiles = [...filesRef.current];
+				const fileIndex = side === "left" ? 0 : 4;
+				newFiles[fileIndex] = file;
+				filesRef.current = newFiles;
+				setFiles(newFiles);
+
+				const newDiffs = [...diffsRef.current];
+				const diffIndex = side === "left" ? 0 : 3;
+				newDiffs[diffIndex] = payloadDiffs;
+				diffsRef.current = newDiffs;
+				setDiffs(newDiffs);
+				setTimeout(() => setRenderTrigger((prev) => prev + 1), 500);
 			} else if (message.command === "updateContent") {
 				setExternalSyncId((id) => id + 1);
 				commitModelUpdate(message.text);
@@ -160,6 +209,9 @@ const App: React.FC = () => {
 				}
 				if (message.config?.syntaxHighlighting !== undefined) {
 					setSyntaxHighlighting(message.config.syntaxHighlighting);
+				}
+				if (message.config?.baseCompareHighlighting !== undefined) {
+					setBaseCompareHighlighting(message.config.baseCompareHighlighting);
 				}
 			} else if (message.command === "clipboardText") {
 				resolveClipboardRead(message.requestId, message.text as string);
@@ -187,28 +239,30 @@ const App: React.FC = () => {
 	const handleEditorChange = React.useMemo(
 		() =>
 			debounce((value: string | undefined, index: number) => {
-				if (value === undefined || index !== 1 || files.length !== 3) return;
+				// files[2] is always the Merged index
+				if (value === undefined || index !== 2) return;
 
 				commitModelUpdate(value);
 
 				vscodeApi?.postMessage({ command: "contentChanged", text: value });
 			}, debounceDelay),
-		[debounceDelay, files.length, commitModelUpdate, vscodeApi],
+		[debounceDelay, commitModelUpdate, vscodeApi],
 	);
 
 	const getHighlights = React.useCallback(
 		(paneIndex: number) => {
 			const highlights: Highlight[] = [];
-			if (files.length !== 3) return highlights;
+			const currentFiles = files;
+			if (currentFiles.length < 5) return highlights;
 
 			const processChunk = (
-				chunk: DiffChunk,
-				isMidPane: boolean,
-				diffIndex: number,
+				chunk: DiffChunk | null,
+				useA: boolean,
+				otherPaneIndex: number,
 			) => {
-				if (chunk.tag === "equal") return;
-				const startLine = isMidPane ? chunk.start_a : chunk.start_b;
-				const endLine = isMidPane ? chunk.end_a : chunk.end_b;
+				if (!chunk || chunk.tag === "equal") return;
+				const startLine = useA ? chunk.start_a : chunk.start_b;
+				const endLine = useA ? chunk.end_a : chunk.end_b;
 
 				highlights.push({
 					startLine: startLine + 1,
@@ -220,21 +274,25 @@ const App: React.FC = () => {
 				});
 
 				if (chunk.tag === "replace" && startLine < endLine) {
-					const outerPaneIndex = diffIndex === 0 ? 0 : 2;
-					const otherStartLine = isMidPane ? chunk.start_b : chunk.start_a;
-					const otherEndLine = isMidPane ? chunk.end_b : chunk.end_a;
+					const otherStartLine = useA ? chunk.start_b : chunk.start_a;
+					const otherEndLine = useA ? chunk.end_b : chunk.end_a;
+
+					const outerFile = currentFiles[otherPaneIndex];
+					const innerFile = currentFiles[paneIndex];
+					if (!innerFile || !outerFile) return;
 
 					// Our text
-					const myLines = splitLines(files[paneIndex].content).slice(
+					const myLines = splitLines(innerFile.content).slice(
 						startLine,
 						endLine,
 					);
 					const myText = myLines.join("\n") + (myLines.length > 0 ? "\n" : "");
 
 					// Other text
-					const otherLines = splitLines(
-						files[isMidPane ? outerPaneIndex : 1].content,
-					).slice(otherStartLine, otherEndLine);
+					const otherLines = splitLines(outerFile.content).slice(
+						otherStartLine,
+						otherEndLine,
+					);
 					const otherText =
 						otherLines.join("\n") + (otherLines.length > 0 ? "\n" : "");
 
@@ -271,35 +329,69 @@ const App: React.FC = () => {
 				}
 			};
 
+			const isLeftBaseComparing = baseCompareHighlighting && !!currentFiles[0];
+			const isRightBaseComparing = baseCompareHighlighting && !!currentFiles[4];
+
+			// Pane 0: Base(L)
 			if (paneIndex === 0 && diffs[0]) {
 				diffs[0].forEach((d) => {
-					processChunk(d, false, 0);
+					processChunk(d, true, 1);
 				});
-			} else if (paneIndex === 1) {
-				if (diffs[0]) {
-					diffs[0].forEach((d) => {
-						processChunk(d, true, 0);
-					});
+			}
+			// Pane 1: Local
+			else if (paneIndex === 1) {
+				if (isLeftBaseComparing) {
+					if (diffs[0])
+						diffs[0].forEach((d) => {
+							processChunk(d, false, 0);
+						});
+				} else {
+					if (diffs[1])
+						diffs[1].forEach((d) => {
+							processChunk(d, false, 2);
+						});
 				}
-				if (diffs[1]) {
+			}
+			// Pane 2: Merged
+			else if (paneIndex === 2) {
+				if (diffs[1])
 					diffs[1].forEach((d) => {
 						processChunk(d, true, 1);
 					});
+				if (diffs[2])
+					diffs[2].forEach((d) => {
+						processChunk(d, true, 3);
+					});
+			}
+			// Pane 3: Remote
+			else if (paneIndex === 3) {
+				if (isRightBaseComparing) {
+					if (diffs[3])
+						diffs[3].forEach((d) => {
+							processChunk(d, true, 4);
+						});
+				} else {
+					if (diffs[2])
+						diffs[2].forEach((d) => {
+							processChunk(d, false, 2);
+						});
 				}
-			} else if (paneIndex === 2 && diffs[1]) {
-				diffs[1].forEach((d) => {
-					processChunk(d, false, 1);
+			}
+			// Pane 4: Base(R)
+			else if (paneIndex === 4 && diffs[3]) {
+				diffs[3].forEach((d) => {
+					processChunk(d, false, 3);
 				});
 			}
 			return highlights;
 		},
-		[diffs, files],
+		[diffs, files, baseCompareHighlighting],
 	);
 
 	const handleApplyChunk = (paneIndex: number, chunk: DiffChunk) => {
-		const sourcePane = paneIndex === 0 ? 0 : 2;
+		const sourcePane = paneIndex;
 		const sourceEditor = editorRefs.current[sourcePane];
-		const mergedEditor = editorRefs.current[1];
+		const mergedEditor = editorRefs.current[2]; // Always target Merged pane at index 2
 		if (!sourceEditor || !mergedEditor) return;
 		const sourceModel = sourceEditor.getModel();
 		const mergedModel = mergedEditor.getModel();
@@ -378,7 +470,7 @@ const App: React.FC = () => {
 	};
 
 	const handleDeleteChunk = (_paneIndex: number, chunk: DiffChunk) => {
-		const mergedEditor = editorRefs.current[1];
+		const mergedEditor = editorRefs.current[2];
 		if (!mergedEditor) return;
 		const mergedModel = mergedEditor.getModel();
 		if (!mergedModel) return;
@@ -428,9 +520,9 @@ const App: React.FC = () => {
 	};
 
 	const handleCopyUpChunk = (paneIndex: number, chunk: DiffChunk) => {
-		const sourcePane = paneIndex === 0 ? 0 : 2;
+		const sourcePane = paneIndex;
 		const sourceEditor = editorRefs.current[sourcePane];
-		const mergedEditor = editorRefs.current[1];
+		const mergedEditor = editorRefs.current[2];
 		if (!sourceEditor || !mergedEditor) return;
 		const sourceModel = sourceEditor.getModel();
 		const mergedModel = mergedEditor.getModel();
@@ -498,9 +590,9 @@ const App: React.FC = () => {
 	};
 
 	const handleCopyDownChunk = (paneIndex: number, chunk: DiffChunk) => {
-		const sourcePane = paneIndex === 0 ? 0 : 2;
+		const sourcePane = paneIndex;
 		const sourceEditor = editorRefs.current[sourcePane];
-		const mergedEditor = editorRefs.current[1];
+		const mergedEditor = editorRefs.current[2];
 		if (!sourceEditor || !mergedEditor) return;
 		const sourceModel = sourceEditor.getModel();
 		const mergedModel = mergedEditor.getModel();
@@ -583,6 +675,25 @@ const App: React.FC = () => {
 		vscodeApi?.postMessage({ command: "completeMerge" });
 	};
 
+	const toggleBaseDiff = (side: "left" | "right") => {
+		const targetIndex = side === "left" ? 0 : 4;
+		if (files[targetIndex]) {
+			// Clear it out
+			const newFiles = [...files];
+			newFiles[targetIndex] = null;
+			setFiles(newFiles);
+			filesRef.current = newFiles;
+
+			const newDiffs = [...diffs];
+			const diffIdx = side === "left" ? 0 : 3;
+			newDiffs[diffIdx] = null;
+			setDiffs(newDiffs);
+			diffsRef.current = newDiffs;
+		} else {
+			vscodeApi?.postMessage({ command: "requestBaseDiff", side });
+		}
+	};
+
 	return (
 		<ErrorBoundary>
 			<div
@@ -600,9 +711,16 @@ const App: React.FC = () => {
 					.diff-delete { background-color: var(--vscode-meldMerge-diffDeleteBackground, rgba(0, 200, 0, 0.15)) !important; }
 					.diff-replace { background-color: var(--vscode-meldMerge-diffReplaceBackground, rgba(0, 100, 255, 0.15)) !important; }
 					.diff-conflict { background-color: var(--vscode-meldMerge-diffConflictBackground, rgba(255, 0, 0, 0.15)) !important; }
+					.diff-margin { background-color: transparent !important; }
+					
+					.diff-insert-margin { background-color: var(--vscode-meldMerge-diffInsertBackground, rgba(0, 200, 0, 0.15)) !important; }
+					.diff-delete-margin { background-color: var(--vscode-meldMerge-diffDeleteBackground, rgba(0, 200, 0, 0.15)) !important; }
+					.diff-replace-margin { background-color: var(--vscode-meldMerge-diffReplaceBackground, rgba(0, 100, 255, 0.15)) !important; }
+					.diff-conflict-margin { background-color: var(--vscode-meldMerge-diffConflictBackground, rgba(255, 0, 0, 0.15)) !important; }
+
 					.diff-replace-inline { background-color: var(--vscode-meldMerge-diffReplaceInlineBackground, rgba(0, 100, 255, 0.35)) !important; }
 				`}</style>
-				{files.length === 0 ? (
+				{files.length === 0 || files[1] === null ? (
 					<div
 						style={{
 							color: "white",
@@ -613,40 +731,118 @@ const App: React.FC = () => {
 						Loading Diff...
 					</div>
 				) : (
-					files.map((file, index) => (
-						<React.Fragment key={file.label}>
-							<CodePane
-								file={file}
-								index={index}
-								onMount={handleEditorMount}
-								onChange={handleEditorChange}
-								isMiddle={index === 1}
-								highlights={getHighlights(index)}
-								onCompleteMerge={index === 1 ? handleCompleteMerge : undefined}
-								onCopyHash={handleCopyHash}
-								onShowDiff={() => handleShowDiff(index)}
-								externalSyncId={index === 1 ? externalSyncId : undefined}
-								requestClipboardText={
-									index === 1 ? requestClipboardText : undefined
-								}
-								writeClipboardText={writeClipboardText}
-								syntaxHighlighting={syntaxHighlighting}
-							/>
-							{index < files.length - 1 && (
-								<DiffCurtain
-									diffs={diffs[index]}
-									leftEditor={editorRefs.current[index]}
-									rightEditor={editorRefs.current[index + 1]}
-									renderTrigger={renderTrigger}
-									reversed={index === 0}
-									onApplyChunk={(chunk) => handleApplyChunk(index, chunk)}
-									onDeleteChunk={(chunk) => handleDeleteChunk(index, chunk)}
-									onCopyUpChunk={(chunk) => handleCopyUpChunk(index, chunk)}
-									onCopyDownChunk={(chunk) => handleCopyDownChunk(index, chunk)}
+					files.map((file, index) => {
+						if (!file) return null; // Skip non-active panes
+
+						let onToggleBase: undefined | (() => void);
+						let baseSide: "left" | "right" | undefined;
+						let isBaseActive = false;
+
+						if (index === 1) {
+							// Local
+							onToggleBase = () => toggleBaseDiff("left");
+							baseSide = "left";
+							isBaseActive = !!files[0];
+						} else if (index === 3) {
+							// Remote
+							onToggleBase = () => toggleBaseDiff("right");
+							baseSide = "right";
+							isBaseActive = !!files[4];
+						}
+
+						// Calculate which diff segment connects to the next active pane
+						let diffsForCurtain: DiffChunk[] | null | undefined = null;
+						let rightEditorIdx = index + 1;
+						let fadeOutLeft = false;
+						let fadeOutRight = false;
+
+						const isLeftBaseComparing = baseCompareHighlighting && !!files[0];
+						const isRightBaseComparing = baseCompareHighlighting && !!files[4];
+
+						if (index === 0 && files[1]) {
+							diffsForCurtain = diffs[0];
+							rightEditorIdx = 1;
+							if (!isLeftBaseComparing) fadeOutRight = true;
+						} else if (index === 1 && files[2]) {
+							diffsForCurtain = diffs[1];
+							rightEditorIdx = 2;
+							if (isLeftBaseComparing) fadeOutLeft = true;
+						} else if (index === 2 && files[3]) {
+							diffsForCurtain = diffs[2];
+							rightEditorIdx = 3;
+							if (isRightBaseComparing) fadeOutRight = true;
+						} else if (index === 3 && files[4]) {
+							diffsForCurtain = diffs[3];
+							rightEditorIdx = 4;
+							if (!isRightBaseComparing) fadeOutLeft = true;
+						}
+
+						return (
+							<React.Fragment key={`${file.label}-${index}`}>
+								<CodePane
+									file={file}
+									index={index}
+									onMount={handleEditorMount}
+									onChange={handleEditorChange}
+									isMiddle={index === 2}
+									highlights={getHighlights(index)}
+									onCompleteMerge={
+										index === 2 ? handleCompleteMerge : undefined
+									}
+									onCopyHash={handleCopyHash}
+									onShowDiff={() => handleShowDiff(index)}
+									externalSyncId={index === 2 ? externalSyncId : undefined}
+									requestClipboardText={
+										index === 2 ? requestClipboardText : undefined
+									}
+									writeClipboardText={writeClipboardText}
+									syntaxHighlighting={syntaxHighlighting}
+									onToggleBase={onToggleBase}
+									baseSide={baseSide}
+									isBaseActive={isBaseActive}
 								/>
-							)}
-						</React.Fragment>
-					))
+								{diffsForCurtain &&
+									editorRefs.current[index] &&
+									editorRefs.current[rightEditorIdx] && (
+										<DiffCurtain
+											diffs={diffsForCurtain}
+											leftEditor={editorRefs.current[index]}
+											rightEditor={editorRefs.current[rightEditorIdx]}
+											renderTrigger={renderTrigger}
+											reversed={index === 1} // diffs[1] is Merged(a) <-> Local(b)
+											fadeOutLeft={fadeOutLeft}
+											fadeOutRight={fadeOutRight}
+											onApplyChunk={
+												index === 1
+													? (chunk) => handleApplyChunk(1, chunk)
+													: index === 2
+														? (chunk) => handleApplyChunk(3, chunk)
+														: undefined
+											}
+											onDeleteChunk={
+												index === 1 || index === 2
+													? (chunk) => handleDeleteChunk(index, chunk)
+													: undefined
+											}
+											onCopyUpChunk={
+												index === 1
+													? (chunk) => handleCopyUpChunk(1, chunk)
+													: index === 2
+														? (chunk) => handleCopyUpChunk(3, chunk)
+														: undefined
+											}
+											onCopyDownChunk={
+												index === 1
+													? (chunk) => handleCopyDownChunk(1, chunk)
+													: index === 2
+														? (chunk) => handleCopyDownChunk(3, chunk)
+														: undefined
+											}
+										/>
+									)}
+							</React.Fragment>
+						);
+					})
 				)}
 			</div>
 		</ErrorBoundary>

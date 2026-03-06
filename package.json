@@ -2,7 +2,7 @@
 	"name": "meld-auto-merge",
 	"displayName": "Meld Merge",
 	"description": "3-way git merge conflict editor, a GNOME Meld Merge port",
-	"version": "0.0.4",
+	"version": "0.0.5",
 	"icon": "images/icon.png",
 	"publisher": "pknowles",
 	"author": "Pyarelal Knowles",
@@ -149,6 +149,11 @@
 					"type": "boolean",
 					"default": true,
 					"description": "Enable syntax highlighting in the merge editor."
+				},
+				"meld.mergeEditor.baseCompareHighlighting": {
+					"type": "boolean",
+					"default": false,
+					"description": "Use base diff highlight when base-comparing."
 				}
 			}
 		},
@@ -210,6 +215,24 @@
 			{
 				"id": "meldMerge.diffCurtainInsertStroke",
 				"description": "Stroke color for insert diff areas in the merging curtain.",
+				"defaults": {
+					"dark": "#00c80080",
+					"light": "#00c80080",
+					"highContrast": "#00c80080"
+				}
+			},
+			{
+				"id": "meldMerge.diffCurtainDeleteFill",
+				"description": "Fill color for delete diff areas in the merging curtain.",
+				"defaults": {
+					"dark": "#00c80033",
+					"light": "#00c80033",
+					"highContrast": "#00c80033"
+				}
+			},
+			{
+				"id": "meldMerge.diffCurtainDeleteStroke",
+				"description": "Stroke color for delete diff areas in the merging curtain.",
 				"defaults": {
 					"dark": "#00c80080",
 					"light": "#00c80080",

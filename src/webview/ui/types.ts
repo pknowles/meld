@@ -29,3 +29,9 @@ export interface Highlight {
 	isWholeLine: boolean;
 	tag: string;
 }
+
+export interface BaseDiffPayload {
+	side: "left" | "right";
+	file: FileState;
+	diffs: DiffChunk[];
+}

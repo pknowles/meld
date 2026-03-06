@@ -13,10 +13,6 @@ it?
 
 This is a feature meld doesn't have; probably because it's hard.
 
-## Local and Remote Commit Cards
-
-Clicking on the commit (local/remote) doesn't navigate me anywhere. is this because vscode doesn't have a way to do that? when I open up "Source Control" -> "Graph" and hover over a commit, I see a neat card displayed with the commit details. I can copy/paste from taht (select/copy) and it has a copy-commit shortcut. Is this reusable by an extension or would we have to write our own to do that?
-
 ## Robust Tracking of "Resolved" Files During a Merge
 
 Currently, the extension parses `.git/MERGE_MSG` to determine which files were originally conflicted but have now been resolved (so we can list them in the "Resolved" section of the TreeView and allow users to run `checkout -m` on them).

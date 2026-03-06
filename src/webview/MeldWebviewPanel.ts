@@ -3,8 +3,8 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 
-import { buildDiffPayload } from "./diffPayload";
-import type { DiffChunk, FileState } from "./ui/types";
+import { buildBaseDiffPayload, buildDiffPayload } from "./diffPayload";
+import type { BaseDiffPayload, DiffChunk, FileState } from "./ui/types";
 
 /**
  * Custom text editor provider for the Meld 3-way merge view.
@@ -78,17 +78,27 @@ export class MeldCustomEditorProvider
 			config.get<number>("mergeEditor.debounceDelay") ?? 300;
 		const syntaxHighlighting =
 			config.get<boolean>("mergeEditor.syntaxHighlighting") ?? true;
+		const baseCompareHighlighting =
+			config.get<boolean>("mergeEditor.baseCompareHighlighting") ?? false;
 
 		const payload = (await buildDiffPayload(repoPath, relativeFilePath)) as {
 			command: string;
 			data: {
 				files: FileState[];
 				diffs: DiffChunk[][];
-				config?: { debounceDelay: number; syntaxHighlighting: boolean };
+				config?: {
+					debounceDelay: number;
+					syntaxHighlighting: boolean;
+					baseCompareHighlighting: boolean;
+				};
 			};
 		};
 		// Add configuration to the payload data
-		payload.data.config = { debounceDelay, syntaxHighlighting };
+		payload.data.config = {
+			debounceDelay,
+			syntaxHighlighting,
+			baseCompareHighlighting,
+		};
 		let isUpdatingFromWebview = false;
 
 		const messageListener = webviewPanel.webview.onDidReceiveMessage(
@@ -163,12 +173,25 @@ export class MeldCustomEditorProvider
 									label,
 								);
 							} catch (e) {
-								const msg = e instanceof Error ? e.message : String(e);
-								vscode.window.showErrorMessage(`Failed to open diff: ${msg}`);
+								const err = e instanceof Error ? e.message : String(e);
+								vscode.window.showErrorMessage(`Failed to open diff: ${err}`);
 							}
 						} else {
 							vscode.window.showErrorMessage("Git extension is not available.");
 						}
+						break;
+					}
+
+					case "requestBaseDiff": {
+						const basePayload = (await buildBaseDiffPayload(
+							repoPath,
+							relativeFilePath,
+							msg.side,
+						)) as {
+							command: string;
+							data: BaseDiffPayload;
+						};
+						webviewPanel.webview.postMessage(basePayload);
 						break;
 					}
 
@@ -205,18 +228,23 @@ export class MeldCustomEditorProvider
 			vscode.workspace.onDidChangeConfiguration((e) => {
 				if (
 					e.affectsConfiguration("meld.mergeEditor.debounceDelay") ||
-					e.affectsConfiguration("meld.mergeEditor.syntaxHighlighting")
+					e.affectsConfiguration("meld.mergeEditor.syntaxHighlighting") ||
+					e.affectsConfiguration("meld.mergeEditor.baseCompareHighlighting")
 				) {
 					const newConfig = vscode.workspace.getConfiguration("meld");
 					const newDelay =
 						newConfig.get<number>("mergeEditor.debounceDelay") ?? 300;
 					const newSyntaxHighlighting =
 						newConfig.get<boolean>("mergeEditor.syntaxHighlighting") ?? true;
+					const newBaseCompareHighlighting =
+						newConfig.get<boolean>("mergeEditor.baseCompareHighlighting") ??
+						false;
 					webviewPanel.webview.postMessage({
 						command: "updateConfig",
 						config: {
 							debounceDelay: newDelay,
 							syntaxHighlighting: newSyntaxHighlighting,
+							baseCompareHighlighting: newBaseCompareHighlighting,
 						},
 					});
 				}
@@ -233,10 +261,18 @@ export class MeldCustomEditorProvider
 						data: {
 							files: FileState[];
 							diffs: DiffChunk[][];
-							config?: { debounceDelay: number; syntaxHighlighting: boolean };
+							config?: {
+								debounceDelay: number;
+								syntaxHighlighting: boolean;
+								baseCompareHighlighting: boolean;
+							};
 						};
 					};
-					newPayload.data.config = { debounceDelay, syntaxHighlighting };
+					newPayload.data.config = {
+						debounceDelay,
+						syntaxHighlighting,
+						baseCompareHighlighting,
+					};
 					webviewPanel.webview.postMessage(newPayload);
 				}
 			},

@@ -12,6 +12,8 @@ interface DiffCurtainProps {
 	// When true, the diff's a/b sides are reversed relative to left/right editors.
 	// diffs[0] has a=Merged(right) b=Local(left), so reversed=true swaps them.
 	reversed: boolean;
+	fadeOutLeft?: boolean;
+	fadeOutRight?: boolean;
 	onApplyChunk?: (chunk: DiffChunk) => void;
 	onDeleteChunk?: (chunk: DiffChunk) => void;
 	onCopyUpChunk?: (chunk: DiffChunk) => void;
@@ -24,6 +26,8 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 	rightEditor,
 	renderTrigger: _renderTrigger,
 	reversed,
+	fadeOutLeft,
+	fadeOutRight,
 	onApplyChunk,
 	onDeleteChunk,
 	onCopyUpChunk,
@@ -32,19 +36,29 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 	const width = 40;
 	const curveOffset = 15;
 
-	const [headerOffset, setHeaderOffset] = React.useState(0);
+	const [leftHeaderOffset, setLeftHeaderOffset] = React.useState(0);
+	const [rightHeaderOffset, setRightHeaderOffset] = React.useState(0);
 	const curtainRef = React.useRef<HTMLDivElement>(null);
 
 	React.useEffect(() => {
 		const calculateOffset = () => {
-			if (!curtainRef.current || !leftEditor) return;
+			if (!curtainRef.current) return;
 			const curtainRect = curtainRef.current.getBoundingClientRect();
-			const editorNode = leftEditor.getContainerDomNode();
-			if (editorNode) {
-				const editorRect = editorNode.getBoundingClientRect();
-				// The Y-offset difference between the top of the SVG canvas (curtain)
-				// and the top of the actual Monaco text area.
-				setHeaderOffset(Math.max(0, editorRect.top - curtainRect.top));
+
+			if (leftEditor) {
+				const leftNode = leftEditor.getContainerDomNode();
+				if (leftNode) {
+					const leftRect = leftNode.getBoundingClientRect();
+					setLeftHeaderOffset(Math.max(0, leftRect.top - curtainRect.top));
+				}
+			}
+
+			if (rightEditor) {
+				const rightNode = rightEditor.getContainerDomNode();
+				if (rightNode) {
+					const rightRect = rightNode.getBoundingClientRect();
+					setRightHeaderOffset(Math.max(0, rightRect.top - curtainRect.top));
+				}
 			}
 		};
 
@@ -58,15 +72,19 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 			calculateOffset();
 		});
 
-		const editorNode = leftEditor?.getContainerDomNode();
-		if (editorNode) observer.observe(editorNode);
+		const leftNode = leftEditor?.getContainerDomNode();
+		if (leftNode) observer.observe(leftNode);
+
+		const rightNode = rightEditor?.getContainerDomNode();
+		if (rightNode) observer.observe(rightNode);
+
 		if (curtainRef.current) observer.observe(curtainRef.current);
 
 		return () => {
 			window.removeEventListener("resize", calculateOffset);
 			observer.disconnect();
 		};
-	}, [leftEditor]);
+	}, [leftEditor, rightEditor]);
 
 	if (!diffs || !leftEditor || !rightEditor) {
 		return null;
@@ -95,6 +113,33 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 				}}
 			>
 				<title>Diff Connections</title>
+				<defs>
+					<mask id="fadeLeft">
+						<linearGradient id="gradLeft">
+							<stop offset="0%" stopColor="black" />
+							<stop offset="80%" stopColor="white" />
+							<stop offset="100%" stopColor="white" />
+						</linearGradient>
+						<rect width="100%" height="100%" fill="url(#gradLeft)" />
+					</mask>
+					<mask id="fadeRight">
+						<linearGradient id="gradRight">
+							<stop offset="0%" stopColor="white" />
+							<stop offset="20%" stopColor="white" />
+							<stop offset="100%" stopColor="black" />
+						</linearGradient>
+						<rect width="100%" height="100%" fill="url(#gradRight)" />
+					</mask>
+					<mask id="fadeBoth">
+						<linearGradient id="gradBoth">
+							<stop offset="0%" stopColor="black" />
+							<stop offset="20%" stopColor="white" />
+							<stop offset="80%" stopColor="white" />
+							<stop offset="100%" stopColor="black" />
+						</linearGradient>
+						<rect width="100%" height="100%" fill="url(#gradBoth)" />
+					</mask>
+				</defs>
 				<style>{`
 					.diff-btn-container { opacity: 0; transition: opacity 0.1s; overflow: visible; }
 					.diff-container:hover .diff-btn-container { opacity: 1; }
@@ -152,38 +197,44 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 					const y1Top =
 						leftEditor.getTopForLineNumber(leftStartLine) -
 						leftEditor.getScrollTop() +
-						headerOffset;
+						leftHeaderOffset;
 					let y1Bottom =
 						leftEditor.getTopForLineNumber(leftEndLine) -
 						leftEditor.getScrollTop() +
-						headerOffset;
+						leftHeaderOffset;
 					if (leftEmpty) y1Bottom = y1Top;
 
 					const y2Top =
 						rightEditor.getTopForLineNumber(rightStartLine) -
 						rightEditor.getScrollTop() +
-						headerOffset;
+						rightHeaderOffset;
 					let y2Bottom =
 						rightEditor.getTopForLineNumber(rightEndLine) -
 						rightEditor.getScrollTop() +
-						headerOffset;
+						rightHeaderOffset;
 					if (rightEmpty) y2Bottom = y2Top;
 
-					const path = `M 0,${y1Top} C ${curveOffset},${y1Top} ${width - curveOffset},${y2Top} ${width},${y2Top} L ${width},${y2Bottom} C ${width - curveOffset},${y2Bottom} ${curveOffset},${y1Bottom} 0,${y1Bottom} Z`;
+					const basePath = `M 0,${y1Top} C ${curveOffset},${y1Top} ${width - curveOffset},${y2Top} ${width},${y2Top} L ${width},${y2Bottom} C ${width - curveOffset},${y2Bottom} ${curveOffset},${y1Bottom} 0,${y1Bottom} Z`;
+					const topEdgePath = `M 0,${y1Top} C ${curveOffset},${y1Top} ${width - curveOffset},${y2Top} ${width},${y2Top}`;
+					const bottomEdgePath = `M ${width},${y2Bottom} C ${width - curveOffset},${y2Bottom} ${curveOffset},${y1Bottom} 0,${y1Bottom}`;
 
 					const color =
 						chunk.tag === "replace"
 							? "var(--vscode-meldMerge-diffCurtainReplaceFill, rgba(0, 100, 255, 0.2))"
 							: chunk.tag === "conflict"
 								? "var(--vscode-meldMerge-diffCurtainConflictFill, rgba(255, 0, 0, 0.2))"
-								: "var(--vscode-meldMerge-diffCurtainInsertFill, rgba(0, 200, 0, 0.2))";
+								: chunk.tag === "delete"
+									? "var(--vscode-meldMerge-diffCurtainDeleteFill, rgba(0, 200, 0, 0.2))"
+									: "var(--vscode-meldMerge-diffCurtainInsertFill, rgba(0, 200, 0, 0.2))";
 
 					const strokeColor =
 						chunk.tag === "replace"
 							? "var(--vscode-meldMerge-diffCurtainReplaceStroke, rgba(0, 100, 255, 0.5))"
 							: chunk.tag === "conflict"
 								? "var(--vscode-meldMerge-diffCurtainConflictStroke, rgba(255, 0, 0, 0.5))"
-								: "var(--vscode-meldMerge-diffCurtainInsertStroke, rgba(0, 200, 0, 0.5))";
+								: chunk.tag === "delete"
+									? "var(--vscode-meldMerge-diffCurtainDeleteStroke, rgba(0, 200, 0, 0.5))"
+									: "var(--vscode-meldMerge-diffCurtainInsertStroke, rgba(0, 200, 0, 0.5))";
 
 					const isReplace = chunk.tag === "replace";
 					const canApply = isReplace || chunk.start_b < chunk.end_b;
@@ -207,14 +258,31 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 					const downY = repY + btnSize + 2;
 					const deleteY = baseDeleteY + btnMargin;
 
+					const diffMask =
+						fadeOutLeft && fadeOutRight
+							? "url(#fadeBoth)"
+							: fadeOutLeft
+								? "url(#fadeLeft)"
+								: fadeOutRight
+									? "url(#fadeRight)"
+									: undefined;
+
 					return (
 						<g
 							key={`${chunk.start_a}-${chunk.end_a}-${chunk.start_b}-${chunk.end_b}`}
 							className="diff-container"
+							mask={diffMask}
 						>
+							<path d={basePath} fill={color} stroke="none" />
 							<path
-								d={path}
-								fill={color}
+								d={topEdgePath}
+								fill="none"
+								stroke={strokeColor}
+								strokeWidth="1"
+							/>
+							<path
+								d={bottomEdgePath}
+								fill="none"
 								stroke={strokeColor}
 								strokeWidth="1"
 							/>

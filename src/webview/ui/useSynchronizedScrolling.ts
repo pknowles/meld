@@ -2,11 +2,11 @@ import type { editor } from "monaco-editor";
 import * as React from "react";
 import type { DiffChunk } from "./types";
 
-export function useSynchronizedScrolling(
+export const useSynchronizedScrolling = (
 	editorRefs: React.MutableRefObject<editor.IStandaloneCodeEditor[]>,
-	diffsRef: React.MutableRefObject<DiffChunk[][]>,
+	diffsRef: React.MutableRefObject<(DiffChunk[] | null)[]>,
 	setRenderTrigger: React.Dispatch<React.SetStateAction<number>>,
-) {
+) => {
 	const syncingFrom = React.useRef<number | null>(null);
 
 	const attachScrollListener = React.useCallback(
@@ -21,7 +21,7 @@ export function useSynchronizedScrolling(
 
 				const mapLineWithDiff = (
 					sLine: number,
-					diff: DiffChunk[],
+					diff: DiffChunk[] | null,
 					sourceIsA: boolean,
 					tIndex: number,
 				): number => {
@@ -52,16 +52,51 @@ export function useSynchronizedScrolling(
 					return Math.min(tEnd + (sLine - sEnd), maxLines);
 				};
 
-				const mapLine = (sLine: number, sIdx: number, tIdx: number): number => {
+				// Maps immediately adjacent panes
+				const mapAdjacentLine = (
+					sLine: number,
+					sIdx: number,
+					tIdx: number,
+				): number => {
+					// 0: Base(L), 1: Local, 2: Merged, 3: Remote, 4: Base(R)
+					// Diffs: [0] Base<->Local, [1] Local<->Merged, [2] Merged<->Remote, [3] Remote<->Base
+
+					// Base(L) -> Local. Diff [0] has Base=a, Local=b
 					if (sIdx === 0 && tIdx === 1)
-						return mapLineWithDiff(sLine, dRef[0], false, 1);
+						return mapLineWithDiff(sLine, dRef[0], true, 1);
 					if (sIdx === 1 && tIdx === 0)
-						return mapLineWithDiff(sLine, dRef[0], true, 0);
+						return mapLineWithDiff(sLine, dRef[0], false, 0);
+
+					// Local -> Merged. Diff [1] receives Merged(a) and Local(b) from Differ
 					if (sIdx === 1 && tIdx === 2)
-						return mapLineWithDiff(sLine, dRef[1], true, 2);
+						return mapLineWithDiff(sLine, dRef[1], false, 2);
 					if (sIdx === 2 && tIdx === 1)
-						return mapLineWithDiff(sLine, dRef[1], false, 1);
+						return mapLineWithDiff(sLine, dRef[1], true, 1);
+
+					// Merged -> Remote. Diff [2] receives Merged(a) and Remote(b)
+					if (sIdx === 2 && tIdx === 3)
+						return mapLineWithDiff(sLine, dRef[2], true, 3);
+					if (sIdx === 3 && tIdx === 2)
+						return mapLineWithDiff(sLine, dRef[2], false, 2);
+
+					// Remote -> Base(R). Diff [3] has Remote=a, Base(R)=b
+					if (sIdx === 3 && tIdx === 4)
+						return mapLineWithDiff(sLine, dRef[3], true, 4);
+					if (sIdx === 4 && tIdx === 3)
+						return mapLineWithDiff(sLine, dRef[3], false, 3);
+
 					return sLine;
+				};
+
+				// Recursive mapping for any two panes
+				const mapLine = (sLine: number, sIdx: number, tIdx: number): number => {
+					if (sIdx === tIdx) return sLine;
+
+					// Move one step towards the target index
+					const nextIdx = sIdx < tIdx ? sIdx + 1 : sIdx - 1;
+					const nextLine = mapAdjacentLine(sLine, sIdx, nextIdx);
+
+					return mapLine(nextLine, nextIdx, tIdx);
 				};
 
 				if (e.scrollTopChanged) {
@@ -73,20 +108,7 @@ export function useSynchronizedScrolling(
 					syncingFrom.current = edIndex;
 					editorRefs.current.forEach((otherEditor, i) => {
 						if (i !== edIndex && otherEditor) {
-							let targetLine = sourceLine;
-							if (edIndex === 0 && i === 1)
-								targetLine = mapLine(sourceLine, 0, 1);
-							else if (edIndex === 0 && i === 2)
-								targetLine = mapLine(mapLine(sourceLine, 0, 1), 1, 2);
-							else if (edIndex === 1 && i === 0)
-								targetLine = mapLine(sourceLine, 1, 0);
-							else if (edIndex === 1 && i === 2)
-								targetLine = mapLine(sourceLine, 1, 2);
-							else if (edIndex === 2 && i === 1)
-								targetLine = mapLine(sourceLine, 2, 1);
-							else if (edIndex === 2 && i === 0)
-								targetLine = mapLine(mapLine(sourceLine, 2, 1), 1, 0);
-
+							const targetLine = mapLine(sourceLine, edIndex, i);
 							const targetScrollTop = targetLine * lineHeight;
 							if (Math.abs(otherEditor.getScrollTop() - targetScrollTop) > 2) {
 								otherEditor.setScrollTop(targetScrollTop);
@@ -113,4 +135,4 @@ export function useSynchronizedScrolling(
 	);
 
 	return { attachScrollListener };
-}
+};
