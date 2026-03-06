@@ -41,6 +41,72 @@ const splitLines = (text: string) => {
 	return lines;
 };
 
+function usePreviousNonNull<T>(value: T | null): T | null {
+	const ref = useRef<T | null>(value);
+	useEffect(() => {
+		if (value !== null) {
+			ref.current = value;
+		}
+	}, [value]);
+	return value !== null ? value : ref.current;
+}
+
+const AnimatedColumn: React.FC<{
+	isOpen: boolean;
+	children: React.ReactNode;
+}> = ({ isOpen, children }) => {
+	const [renderState, setRenderState] = useState<
+		"closed" | "opening" | "open" | "closing"
+	>(isOpen ? "open" : "closed");
+	const [cachedChildren, setCachedChildren] = useState(children);
+
+	useEffect(() => {
+		if (isOpen) {
+			setCachedChildren(children);
+			if (renderState === "closed" || renderState === "closing") {
+				setRenderState("opening");
+				setTimeout(() => setRenderState("open"), 300);
+			}
+		} else {
+			if (renderState === "open" || renderState === "opening") {
+				setRenderState("closing");
+				setTimeout(() => setRenderState("closed"), 300);
+			}
+		}
+	}, [isOpen, children, renderState]);
+
+	if (renderState === "closed") return null;
+
+	const isGrowing = renderState === "opening" || renderState === "open";
+	const isFadedIn = renderState === "open";
+
+	return (
+		<div
+			style={{
+				flex: isGrowing ? 1 : 0.00001,
+				minWidth: 0,
+				overflow: "hidden",
+				transition: "flex 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+				display: "flex",
+				flexDirection: "row",
+			}}
+		>
+			<div
+				style={{
+					opacity: isFadedIn ? 1 : 0,
+					transition: "opacity 0.15s ease-in-out",
+					display: "flex",
+					flexDirection: "row",
+					flex: 1,
+					minWidth: renderState === "opening" && !isFadedIn ? "800px" : "0",
+				}}
+			>
+				{cachedChildren}
+			</div>
+		</div>
+	);
+};
+
 const App: React.FC = () => {
 	// files length is now always 5: [Base(left), Local, Merged, Remote, Base(right)]
 	// Base slots start as null.
@@ -54,17 +120,25 @@ const App: React.FC = () => {
 	const [debounceDelay, setDebounceDelay] = useState(300);
 	const [syntaxHighlighting, setSyntaxHighlighting] = useState(true);
 	const [baseCompareHighlighting, setBaseCompareHighlighting] = useState(false);
+	const [smoothScrolling, setSmoothScrolling] = useState(true);
 	const [renderTrigger, setRenderTrigger] = useState(0);
 	const editorRefs = useRef<editor.IStandaloneCodeEditor[]>([]);
 
 	const vscodeApi = useVSCodeMessageBus();
 	const { resolveClipboardRead, requestClipboardText, writeClipboardText } =
 		useClipboardOverrides(editorRefs);
-	const { attachScrollListener } = useSynchronizedScrolling(
+	const { attachScrollListener, forceSyncToPane } = useSynchronizedScrolling(
 		editorRefs,
 		diffsRef,
 		setRenderTrigger,
+		smoothScrolling,
 	);
+
+	const prevBaseLeft = usePreviousNonNull(files[0] || null);
+	const prevBaseLeftDiffs = usePreviousNonNull(diffs[0] || null);
+
+	const prevBaseRight = usePreviousNonNull(files[4] || null);
+	const prevBaseRightDiffs = usePreviousNonNull(diffs[3] || null);
 
 	const commitModelUpdate = React.useCallback((value: string) => {
 		// All computation must happen outside the setFiles updater.
@@ -163,6 +237,9 @@ const App: React.FC = () => {
 						message.data.config.baseCompareHighlighting,
 					);
 				}
+				if (message.data.config?.smoothScrolling !== undefined) {
+					setSmoothScrolling(message.data.config.smoothScrolling);
+				}
 
 				const localLines = splitLines(message.data.files[0].content);
 				const midLines = splitLines(message.data.files[1].content);
@@ -213,6 +290,9 @@ const App: React.FC = () => {
 				if (message.config?.baseCompareHighlighting !== undefined) {
 					setBaseCompareHighlighting(message.config.baseCompareHighlighting);
 				}
+				if (message.config?.smoothScrolling !== undefined) {
+					setSmoothScrolling(message.config.smoothScrolling);
+				}
 			} else if (message.command === "clipboardText") {
 				resolveClipboardRead(message.requestId, message.text as string);
 			}
@@ -234,6 +314,16 @@ const App: React.FC = () => {
 	) => {
 		editorRefs.current[index] = editor;
 		attachScrollListener(editor, index);
+
+		if (index === 0) {
+			setTimeout(() => {
+				forceSyncToPane(1, 0);
+			}, 50);
+		} else if (index === 4) {
+			setTimeout(() => {
+				forceSyncToPane(3, 4);
+			}, 50);
+		}
 	};
 
 	const handleEditorChange = React.useMemo(
@@ -731,8 +821,17 @@ const App: React.FC = () => {
 						Loading Diff...
 					</div>
 				) : (
-					files.map((file, index) => {
-						if (!file) return null; // Skip non-active panes
+					[0, 1, 2, 3, 4].map((index) => {
+						const isLeftBase = index === 0;
+						const isRightBase = index === 4;
+						const activeFile =
+							files[index] ||
+							(isLeftBase ? prevBaseLeft : isRightBase ? prevBaseRight : null);
+
+						if (!activeFile) return null;
+
+						const file = activeFile;
+						const isOpen = !!files[index];
 
 						let onToggleBase: undefined | (() => void);
 						let baseSide: "left" | "right" | undefined;
@@ -752,6 +851,7 @@ const App: React.FC = () => {
 
 						// Calculate which diff segment connects to the next active pane
 						let diffsForCurtain: DiffChunk[] | null | undefined = null;
+						let leftEditorIdx = index;
 						let rightEditorIdx = index + 1;
 						let fadeOutLeft = false;
 						let fadeOutRight = false;
@@ -760,25 +860,73 @@ const App: React.FC = () => {
 						const isRightBaseComparing = baseCompareHighlighting && !!files[4];
 
 						if (index === 0 && files[1]) {
-							diffsForCurtain = diffs[0];
+							diffsForCurtain = diffs[0] || prevBaseLeftDiffs;
+							leftEditorIdx = 0;
 							rightEditorIdx = 1;
 							if (!isLeftBaseComparing) fadeOutRight = true;
 						} else if (index === 1 && files[2]) {
 							diffsForCurtain = diffs[1];
+							leftEditorIdx = 1;
 							rightEditorIdx = 2;
 							if (isLeftBaseComparing) fadeOutLeft = true;
 						} else if (index === 2 && files[3]) {
 							diffsForCurtain = diffs[2];
+							leftEditorIdx = 2;
 							rightEditorIdx = 3;
 							if (isRightBaseComparing) fadeOutRight = true;
-						} else if (index === 3 && files[4]) {
-							diffsForCurtain = diffs[3];
+						} else if (
+							index === 4 &&
+							activeFile /* use activeFile instead of files[4] for fade out */
+						) {
+							diffsForCurtain = diffs[3] || prevBaseRightDiffs;
+							leftEditorIdx = 3;
 							rightEditorIdx = 4;
 							if (!isRightBaseComparing) fadeOutLeft = true;
 						}
 
-						return (
-							<React.Fragment key={`${file.label}-${index}`}>
+						const curtainContent = diffsForCurtain &&
+							editorRefs.current[leftEditorIdx] &&
+							editorRefs.current[rightEditorIdx] && (
+								<DiffCurtain
+									diffs={diffsForCurtain}
+									leftEditor={editorRefs.current[leftEditorIdx]}
+									rightEditor={editorRefs.current[rightEditorIdx]}
+									renderTrigger={renderTrigger}
+									reversed={index === 1} // diffs[1] is Merged(a) <-> Local(b)
+									fadeOutLeft={fadeOutLeft}
+									fadeOutRight={fadeOutRight}
+									onApplyChunk={
+										index === 1
+											? (chunk) => handleApplyChunk(1, chunk)
+											: index === 2
+												? (chunk) => handleApplyChunk(3, chunk)
+												: undefined
+									}
+									onDeleteChunk={
+										index === 1 || index === 2
+											? (chunk) => handleDeleteChunk(index, chunk)
+											: undefined
+									}
+									onCopyUpChunk={
+										index === 1
+											? (chunk) => handleCopyUpChunk(1, chunk)
+											: index === 2
+												? (chunk) => handleCopyUpChunk(3, chunk)
+												: undefined
+									}
+									onCopyDownChunk={
+										index === 1
+											? (chunk) => handleCopyDownChunk(1, chunk)
+											: index === 2
+												? (chunk) => handleCopyDownChunk(3, chunk)
+												: undefined
+									}
+								/>
+							);
+
+						const paneContent = (
+							<React.Fragment key={`inner-${file.label}-${index}`}>
+								{index === 4 && curtainContent}
 								<CodePane
 									file={file}
 									index={index}
@@ -801,45 +949,17 @@ const App: React.FC = () => {
 									baseSide={baseSide}
 									isBaseActive={isBaseActive}
 								/>
-								{diffsForCurtain &&
-									editorRefs.current[index] &&
-									editorRefs.current[rightEditorIdx] && (
-										<DiffCurtain
-											diffs={diffsForCurtain}
-											leftEditor={editorRefs.current[index]}
-											rightEditor={editorRefs.current[rightEditorIdx]}
-											renderTrigger={renderTrigger}
-											reversed={index === 1} // diffs[1] is Merged(a) <-> Local(b)
-											fadeOutLeft={fadeOutLeft}
-											fadeOutRight={fadeOutRight}
-											onApplyChunk={
-												index === 1
-													? (chunk) => handleApplyChunk(1, chunk)
-													: index === 2
-														? (chunk) => handleApplyChunk(3, chunk)
-														: undefined
-											}
-											onDeleteChunk={
-												index === 1 || index === 2
-													? (chunk) => handleDeleteChunk(index, chunk)
-													: undefined
-											}
-											onCopyUpChunk={
-												index === 1
-													? (chunk) => handleCopyUpChunk(1, chunk)
-													: index === 2
-														? (chunk) => handleCopyUpChunk(3, chunk)
-														: undefined
-											}
-											onCopyDownChunk={
-												index === 1
-													? (chunk) => handleCopyDownChunk(1, chunk)
-													: index === 2
-														? (chunk) => handleCopyDownChunk(3, chunk)
-														: undefined
-											}
-										/>
-									)}
+								{index !== 4 && curtainContent}
+							</React.Fragment>
+						);
+
+						return (
+							<React.Fragment key={`${file.label}-${index}`}>
+								{isLeftBase || isRightBase ? (
+									<AnimatedColumn isOpen={isOpen}>{paneContent}</AnimatedColumn>
+								) : (
+									paneContent
+								)}
 							</React.Fragment>
 						);
 					})

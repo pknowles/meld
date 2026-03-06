@@ -1,5 +1,20 @@
 # Future Improvements & Known Issues
 
+## Intuitive usage
+
+- Add a keyboard shortcut to go to the source tree tab with the merge conflict list
+- Popup when a merge conflict is first detected?
+- Remove vscode default 3-way merge
+- Open conflicts with our 3-way editor on click? or at least make the 3-way view more obvious
+- Call these out in the readme for first time users
+
+## Prev/Next diff and conflict buttons
+
+Configurable shortcuts to do so. Match Meld's?
+
+Automatically focus on the first conflict when opened (default-on settings
+option for this).
+
 ## 5-Way merge
 
 I'd like to add buttons to our custom merge view that add extra columns. currently we have 3: Local, Merged, Incoming. I want a button on the left of the Local that toggles a new "Base" column to the left. An equivalent button on the right of the "Incoming" title also toggles a new "Base" column to the right. Toggling both makes 5 columns total so you have:
@@ -57,3 +72,10 @@ To solve a possible delay reading a 10MB index.tsx all at once...
 *   **Webview URI Configuration**: Make `MeldWebviewPanel.ts` expose a Webview URI for `out/vs` to the frontend (`window.__MONACO_VS_URI__`).
 *   **Configure Loader**: Set `loader.config({ paths: { vs: window.__MONACO_VS_URI__ } })` so Monaco lazy-loads instead of bundling entirely.
 *   **Fix Workers**: Fix cross-origin worker issues by returning a Blob in `getWorkerUrl` that uses `importScripts('${window.__MONACO_VS_URI__}/base/worker/workerMain.js')` so bundler plugins are not required.
+
+## Open Blank 3-way merge
+
+For people that want a 3-way merge with copy/pasted content. We'd need to make
+all panels editable and maybe default one of the base windows to be open and
+share content. What about saving? Vscode has this for 2-way diff and IIRC can
+save individual panels. Low !/$.

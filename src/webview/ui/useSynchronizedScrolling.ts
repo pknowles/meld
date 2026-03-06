@@ -1,138 +1,188 @@
-import type { editor } from "monaco-editor";
+import { editor } from "monaco-editor";
 import * as React from "react";
+import { mapLineAcrossPanes } from "./scrollMapping";
 import type { DiffChunk } from "./types";
 
 export const useSynchronizedScrolling = (
 	editorRefs: React.MutableRefObject<editor.IStandaloneCodeEditor[]>,
 	diffsRef: React.MutableRefObject<(DiffChunk[] | null)[]>,
 	setRenderTrigger: React.Dispatch<React.SetStateAction<number>>,
+	smoothScrolling: boolean,
 ) => {
-	const syncingFrom = React.useRef<number | null>(null);
+	// Replacing `syncingFrom` with a scroll lock that discards re-entrant events entirely.
+	const scrollLockRef = React.useRef<boolean>(false);
 
-	const attachScrollListener = React.useCallback(
-		(ed: editor.IStandaloneCodeEditor, edIndex: number) => {
-			return ed.onDidScrollChange((e: import("monaco-editor").IScrollEvent) => {
-				setRenderTrigger((prev) => prev + 1);
+	const syncEditors = React.useCallback(
+		(
+			sourceEd: editor.IStandaloneCodeEditor,
+			sourceIndex: number,
+			scrollTop: number,
+			scrollLeft: number | undefined,
+			targetIndices?: number[],
+		) => {
+			if (scrollLockRef.current) return;
+			scrollLockRef.current = true;
 
-				if (syncingFrom.current !== null && syncingFrom.current !== edIndex)
-					return;
+			try {
+				if (scrollTop !== undefined) {
+					// 1. Calculate the syncpoint
+					const pageSize = sourceEd.getLayoutInfo().height;
+					const scrollHeight = sourceEd.getContentHeight();
 
-				const dRef = diffsRef.current;
+					const halfPage = pageSize / 2;
+					let syncpoint = 0.0;
 
-				const mapLineWithDiff = (
-					sLine: number,
-					diff: DiffChunk[] | null,
-					sourceIsA: boolean,
-					tIndex: number,
-				): number => {
-					const maxLines =
-						editorRefs.current[tIndex]?.getModel()?.getLineCount() || 1;
+					const firstScale = Math.min(1, Math.max(0, scrollTop / halfPage));
+					syncpoint += 0.5 * firstScale;
 
-					if (!diff || diff.length === 0) return Math.min(sLine, maxLines);
-					let lastChunk = diff[0];
-					for (const chunk of diff) {
-						const sStart = sourceIsA ? chunk.start_a : chunk.start_b;
-						const sEnd = sourceIsA ? chunk.end_a : chunk.end_b;
-						const tStart = sourceIsA ? chunk.start_b : chunk.start_a;
-						const tEnd = sourceIsA ? chunk.end_b : chunk.end_a;
+					const bottomVal = Math.max(0, scrollHeight - 1.5 * pageSize);
+					const lastScale = Math.min(
+						1,
+						Math.max(0, (scrollTop - bottomVal) / halfPage),
+					);
+					syncpoint += 0.5 * lastScale;
 
-						if (sLine >= sStart && sLine < sEnd) {
-							if (chunk.tag === "equal") {
-								return Math.min(tStart + (sLine - sStart), maxLines);
-							}
-							const sLen = sEnd - sStart;
-							const tLen = tEnd - tStart;
-							const ratio = sLen > 0 ? (sLine - sStart) / sLen : 0;
-							return Math.min(tStart + ratio * tLen, maxLines);
+					const syncY = scrollTop + pageSize * syncpoint;
+					const sourceModel = sourceEd.getModel();
+					const sourceLineCount = sourceModel ? sourceModel.getLineCount() : 1;
+
+					let intSourceLine = 1;
+					let low = 1;
+					let high = sourceLineCount;
+					while (low <= high) {
+						const mid = Math.floor((low + high) / 2);
+						const midTop = sourceEd.getTopForLineNumber(mid);
+						if (midTop <= syncY) {
+							intSourceLine = mid;
+							low = mid + 1;
+						} else {
+							high = mid - 1;
 						}
-						lastChunk = chunk;
 					}
-					const sEnd = sourceIsA ? lastChunk.end_a : lastChunk.end_b;
-					const tEnd = sourceIsA ? lastChunk.end_b : lastChunk.end_a;
-					return Math.min(tEnd + (sLine - sEnd), maxLines);
-				};
 
-				// Maps immediately adjacent panes
-				const mapAdjacentLine = (
-					sLine: number,
-					sIdx: number,
-					tIdx: number,
-				): number => {
-					// 0: Base(L), 1: Local, 2: Merged, 3: Remote, 4: Base(R)
-					// Diffs: [0] Base<->Local, [1] Local<->Merged, [2] Merged<->Remote, [3] Remote<->Base
+					const fallbackLineHeight = sourceEd.getOption(
+						editor.EditorOption.lineHeight,
+					);
 
-					// Base(L) -> Local. Diff [0] has Base=a, Local=b
-					if (sIdx === 0 && tIdx === 1)
-						return mapLineWithDiff(sLine, dRef[0], true, 1);
-					if (sIdx === 1 && tIdx === 0)
-						return mapLineWithDiff(sLine, dRef[0], false, 0);
+					const baseSourcePx = sourceEd.getTopForLineNumber(intSourceLine);
+					const nextSourcePx =
+						intSourceLine < sourceLineCount
+							? sourceEd.getTopForLineNumber(intSourceLine + 1)
+							: baseSourcePx + fallbackLineHeight;
+					const sourceHeight =
+						nextSourcePx - baseSourcePx || fallbackLineHeight;
 
-					// Local -> Merged. Diff [1] receives Merged(a) and Local(b) from Differ
-					if (sIdx === 1 && tIdx === 2)
-						return mapLineWithDiff(sLine, dRef[1], false, 2);
-					if (sIdx === 2 && tIdx === 1)
-						return mapLineWithDiff(sLine, dRef[1], true, 1);
+					const fraction = (syncY - baseSourcePx) / sourceHeight;
+					const sourceLineDecimal = intSourceLine - 1 + fraction;
 
-					// Merged -> Remote. Diff [2] receives Merged(a) and Remote(b)
-					if (sIdx === 2 && tIdx === 3)
-						return mapLineWithDiff(sLine, dRef[2], true, 3);
-					if (sIdx === 3 && tIdx === 2)
-						return mapLineWithDiff(sLine, dRef[2], false, 2);
+					const paneCounts = [0, 1, 2, 3, 4].map((idx) => {
+						const m = editorRefs.current[idx]?.getModel();
+						return m ? m.getLineCount() : 1;
+					});
 
-					// Remote -> Base(R). Diff [3] has Remote=a, Base(R)=b
-					if (sIdx === 3 && tIdx === 4)
-						return mapLineWithDiff(sLine, dRef[3], true, 4);
-					if (sIdx === 4 && tIdx === 3)
-						return mapLineWithDiff(sLine, dRef[3], false, 3);
+					editorRefs.current.forEach((otherEditor, targetIdx) => {
+						if (targetIdx !== sourceIndex && otherEditor) {
+							if (targetIndices && !targetIndices.includes(targetIdx)) return;
 
-					return sLine;
-				};
+							const targetLineDecimal = mapLineAcrossPanes(
+								sourceLineDecimal,
+								sourceIndex,
+								targetIdx,
+								diffsRef.current,
+								paneCounts,
+								smoothScrolling,
+							);
 
-				// Recursive mapping for any two panes
-				const mapLine = (sLine: number, sIdx: number, tIdx: number): number => {
-					if (sIdx === tIdx) return sLine;
+							const intTargetLine = Math.floor(targetLineDecimal) + 1;
+							const targetFraction =
+								targetLineDecimal - Math.floor(targetLineDecimal);
 
-					// Move one step towards the target index
-					const nextIdx = sIdx < tIdx ? sIdx + 1 : sIdx - 1;
-					const nextLine = mapAdjacentLine(sLine, sIdx, nextIdx);
+							const targetMax = paneCounts[targetIdx];
 
-					return mapLine(nextLine, nextIdx, tIdx);
-				};
+							let targetSyncY: number;
+							if (intTargetLine >= targetMax) {
+								const lastTop = otherEditor.getTopForLineNumber(targetMax);
+								const targetHeight = otherEditor.getOption(
+									editor.EditorOption.lineHeight,
+								);
+								targetSyncY = lastTop + targetFraction * targetHeight;
+							} else {
+								const targetBasePx =
+									otherEditor.getTopForLineNumber(intTargetLine);
+								const targetNextPx = otherEditor.getTopForLineNumber(
+									intTargetLine + 1,
+								);
+								targetSyncY =
+									targetBasePx + targetFraction * (targetNextPx - targetBasePx);
+							}
 
-				if (e.scrollTopChanged) {
-					let lineHeight =
-						ed.getTopForLineNumber(2) - ed.getTopForLineNumber(1);
-					if (lineHeight <= 0) lineHeight = 19;
-					const sourceLine = Math.max(0, e.scrollTop) / lineHeight;
+							const targetScrollTop =
+								targetSyncY - otherEditor.getLayoutInfo().height * syncpoint;
 
-					syncingFrom.current = edIndex;
-					editorRefs.current.forEach((otherEditor, i) => {
-						if (i !== edIndex && otherEditor) {
-							const targetLine = mapLine(sourceLine, edIndex, i);
-							const targetScrollTop = targetLine * lineHeight;
 							if (Math.abs(otherEditor.getScrollTop() - targetScrollTop) > 2) {
 								otherEditor.setScrollTop(targetScrollTop);
 							}
 						}
 					});
-					syncingFrom.current = null;
 				}
 
-				if (e.scrollLeftChanged) {
-					syncingFrom.current = edIndex;
-					editorRefs.current.forEach((otherEditor, i) => {
-						if (i !== edIndex && otherEditor) {
-							if (Math.abs(otherEditor.getScrollLeft() - e.scrollLeft) > 2) {
-								otherEditor.setScrollLeft(e.scrollLeft);
+				if (scrollLeft !== undefined) {
+					editorRefs.current.forEach((otherEditor, targetIdx) => {
+						if (targetIdx !== sourceIndex && otherEditor) {
+							if (targetIndices && !targetIndices.includes(targetIdx)) return;
+							if (Math.abs(otherEditor.getScrollLeft() - scrollLeft) > 2) {
+								otherEditor.setScrollLeft(scrollLeft);
 							}
 						}
 					});
-					syncingFrom.current = null;
+				}
+			} finally {
+				requestAnimationFrame(() => {
+					scrollLockRef.current = false;
+				});
+			}
+		},
+		[diffsRef, editorRefs, smoothScrolling],
+	);
+
+	const attachScrollListener = React.useCallback(
+		(ed: editor.IStandaloneCodeEditor, edIndex: number) => {
+			return ed.onDidScrollChange((e: import("monaco-editor").IScrollEvent) => {
+				if (scrollLockRef.current) return;
+				if (scrollLockRef.current) return;
+
+				// Only trigger react renders if it wasn't a locked event
+				setRenderTrigger((prev) => prev + 1);
+
+				if (e.scrollTopChanged || e.scrollLeftChanged) {
+					syncEditors(
+						ed,
+						edIndex,
+						e.scrollTopChanged ? e.scrollTop : ed.getScrollTop(),
+						e.scrollLeftChanged ? e.scrollLeft : ed.getScrollLeft(),
+					);
 				}
 			});
 		},
-		[diffsRef, editorRefs, setRenderTrigger],
+		[setRenderTrigger, syncEditors],
 	);
 
-	return { attachScrollListener };
+	const forceSyncToPane = React.useCallback(
+		(sourceIndex: number, targetIndex: number) => {
+			const sourceEd = editorRefs.current[sourceIndex];
+			const targetEd = editorRefs.current[targetIndex];
+			if (sourceEd && targetEd) {
+				syncEditors(
+					sourceEd,
+					sourceIndex,
+					sourceEd.getScrollTop(),
+					sourceEd.getScrollLeft(),
+					[targetIndex],
+				);
+			}
+		},
+		[editorRefs, syncEditors],
+	);
+
+	return { attachScrollListener, forceSyncToPane };
 };

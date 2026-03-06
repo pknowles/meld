@@ -154,6 +154,11 @@
 					"type": "boolean",
 					"default": false,
 					"description": "Use base diff highlight when base-comparing."
+				},
+				"meld.mergeEditor.smoothScrolling": {
+					"type": "boolean",
+					"default": true,
+					"description": "Enable smooth proportional scrolling synchronization across panels."
 				}
 			}
 		},

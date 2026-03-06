@@ -80,6 +80,8 @@ export class MeldCustomEditorProvider
 			config.get<boolean>("mergeEditor.syntaxHighlighting") ?? true;
 		const baseCompareHighlighting =
 			config.get<boolean>("mergeEditor.baseCompareHighlighting") ?? false;
+		const smoothScrolling =
+			config.get<boolean>("mergeEditor.smoothScrolling") ?? true;
 
 		const payload = (await buildDiffPayload(repoPath, relativeFilePath)) as {
 			command: string;
@@ -90,6 +92,7 @@ export class MeldCustomEditorProvider
 					debounceDelay: number;
 					syntaxHighlighting: boolean;
 					baseCompareHighlighting: boolean;
+					smoothScrolling: boolean;
 				};
 			};
 		};
@@ -98,6 +101,7 @@ export class MeldCustomEditorProvider
 			debounceDelay,
 			syntaxHighlighting,
 			baseCompareHighlighting,
+			smoothScrolling,
 		};
 		let isUpdatingFromWebview = false;
 
@@ -229,7 +233,8 @@ export class MeldCustomEditorProvider
 				if (
 					e.affectsConfiguration("meld.mergeEditor.debounceDelay") ||
 					e.affectsConfiguration("meld.mergeEditor.syntaxHighlighting") ||
-					e.affectsConfiguration("meld.mergeEditor.baseCompareHighlighting")
+					e.affectsConfiguration("meld.mergeEditor.baseCompareHighlighting") ||
+					e.affectsConfiguration("meld.mergeEditor.smoothScrolling")
 				) {
 					const newConfig = vscode.workspace.getConfiguration("meld");
 					const newDelay =
@@ -239,12 +244,15 @@ export class MeldCustomEditorProvider
 					const newBaseCompareHighlighting =
 						newConfig.get<boolean>("mergeEditor.baseCompareHighlighting") ??
 						false;
+					const newSmoothScrolling =
+						newConfig.get<boolean>("mergeEditor.smoothScrolling") ?? true;
 					webviewPanel.webview.postMessage({
 						command: "updateConfig",
 						config: {
 							debounceDelay: newDelay,
 							syntaxHighlighting: newSyntaxHighlighting,
 							baseCompareHighlighting: newBaseCompareHighlighting,
+							smoothScrolling: newSmoothScrolling,
 						},
 					});
 				}
@@ -265,6 +273,7 @@ export class MeldCustomEditorProvider
 								debounceDelay: number;
 								syntaxHighlighting: boolean;
 								baseCompareHighlighting: boolean;
+								smoothScrolling: boolean;
 							};
 						};
 					};
@@ -272,6 +281,7 @@ export class MeldCustomEditorProvider
 						debounceDelay,
 						syntaxHighlighting,
 						baseCompareHighlighting,
+						smoothScrolling,
 					};
 					webviewPanel.webview.postMessage(newPayload);
 				}
