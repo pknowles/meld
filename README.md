@@ -103,6 +103,12 @@ The highlighted colors represent:
 - **Green** - Simple additions and deletions (if you want separate, you can override them).
 - **Blue** - Rewritten lines that are not conflicts.
 
+### 5-Way Compare to Base
+
+Easily toggle diffs between Base and Local/Remote. This is handy to understand
+what changes were made to arrive at Local and Remote states before deciding how
+to handle the merge conflicts. Necessary for the more difficult conflicts.
+
 ### Auto-Merge
 
 Manually trigger auto-merge at any time via the Command Palette: **"Meld:
@@ -168,6 +174,23 @@ If you already have a conflicted file actively open in your regular VS Code edit
 3. The custom 3-way merge viewer will open up immediately for that file.
 4. *(Optional)* Alternatively, you can run the **Meld: Auto-Merge Current File**
    in case there are low hanging fruit conflicts that can be auto-resolved.
+
+### Resolving Merge Conflicts
+
+Just the basics. The middle Merged column is what you want the file to be after
+merging. The left Local column is what's in the branch you're on and the right
+Remote column is what you're trying to merge into the Local code. If it's not
+obvious what the final result should be, try opening the **Compare to Base**
+columns (the buttons next to the column titles) and ask yourself this:
+
+1. *What is it the diff from Base to Local is trying to do?*
+2. *What is it the diff from Base to Remote is trying to do?*
+3. *How can I write the code that does both these things?
+
+In most cases you won't need **Compare to Base** but for the more tricky merge
+conflicts it can be incredibly useful. This is a feature I tacked on to the
+original Meld GUI. Tangent: you can actually add command line parameters to have
+the real Meld app launch with these diffs as extra tabs!
 
 ## Keyboard Shortcuts
 

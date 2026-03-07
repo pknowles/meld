@@ -55,3 +55,10 @@ For people that want a 3-way merge with copy/pasted content. We'd need to make
 all panels editable and maybe default one of the base windows to be open and
 share content. What about saving? Vscode has this for 2-way diff and IIRC can
 save individual panels. Low !/$.
+
+## Assorted Polish
+
+- **Scroll Perf**: `React.memo(CodePane)` to prevent full re-renders on scroll frames.
+- **Maintainability**: Replace magic indices (0-4) with an `enum`/`const` mapping or just use arrays.
+- **Fix Returns**: Handle failures properly, e.g. from `getGitState`, without silently passing empty strings.
+- **UX**: Rethink `Ctrl+K` to avoid interfering with global VS Code chord prefixes.
