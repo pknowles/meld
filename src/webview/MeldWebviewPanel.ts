@@ -2,7 +2,7 @@
 
 import * as path from "node:path";
 import * as vscode from "vscode";
-
+import { getUnresolvedReasons } from "../gitUtils";
 import { buildBaseDiffPayload, buildDiffPayload } from "./diffPayload";
 import type { BaseDiffPayload, DiffChunk, FileState } from "./ui/types";
 
@@ -202,13 +202,27 @@ export class MeldCustomEditorProvider
 						break;
 					}
 
-					case "completeMerge":
+					case "completeMerge": {
+						const unresolvedReasons = getUnresolvedReasons(document.getText());
+						if (unresolvedReasons.length > 0) {
+							vscode.window.showErrorMessage(
+								`Cannot complete merge: file contains ${unresolvedReasons.join(" and ")}.`,
+							);
+							break;
+						}
+
 						await document.save();
-						vscode.commands.executeCommand("meld-auto-merge.smartAdd", {
-							uri: document.uri,
-						});
-						webviewPanel.dispose();
+						const success = await vscode.commands.executeCommand(
+							"meld-auto-merge.smartAdd",
+							{
+								uri: document.uri,
+							},
+						);
+						if (success === true) {
+							webviewPanel.dispose();
+						}
 						break;
+					}
 				}
 			},
 		);

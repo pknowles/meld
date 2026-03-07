@@ -3,7 +3,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { execGit, getConflictedFiles } from "./gitUtils";
+import { execGit, getConflictedFiles, getUnresolvedReasons } from "./gitUtils";
 import { GitTextMerger } from "./matchers/gitTextMerger";
 import { ConflictedFilesProvider, type GitFile } from "./treeView";
 import { MeldCustomEditorProvider } from "./webview/MeldWebviewPanel";
@@ -404,15 +404,12 @@ export function activate(context: vscode.ExtensionContext) {
 				text = editor.document.getText();
 			}
 
-			if (
-				text.includes("<<<<<<<") ||
-				text.includes("=======") ||
-				text.includes(">>>>>>>")
-			) {
+			const unresolvedReasons = getUnresolvedReasons(text);
+			if (unresolvedReasons.length > 0) {
 				vscode.window.showErrorMessage(
-					"Cannot add file: Conflict markers still remain in the text.",
+					`Cannot add file: file contains ${unresolvedReasons.join(" and ")}.`,
 				);
-				return;
+				return false;
 			}
 
 			const workspaceFolder = vscode.workspace.getWorkspaceFolder(documentUri);
@@ -431,10 +428,12 @@ export function activate(context: vscode.ExtensionContext) {
 					`Successfully added ${relativeFilePath}`,
 				);
 				conflictedFilesProvider.refresh();
+				return true;
 			} catch (e: unknown) {
 				vscode.window.showErrorMessage(
 					`Git Add failed: ${(e as Error).message}`,
 				);
+				return false;
 			}
 		},
 	);

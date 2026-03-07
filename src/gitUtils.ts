@@ -41,3 +41,27 @@ export async function getConflictedFiles(repoPath: string): Promise<string[]> {
 		return [];
 	}
 }
+/**
+ * Checks for unresolved merge conflict markers or (??) markers.
+ */
+export function getUnresolvedReasons(text: string): string[] {
+	const reasons: string[] = [];
+	const lines = text.split(/\r?\n/);
+	const conflictMarkers = ["<<<<<<<", "=======", ">>>>>>>", "|||||||"];
+
+	let hasConflict = false;
+	let hasQuestion = false;
+
+	for (const line of lines) {
+		if (!hasConflict && conflictMarkers.some((m) => line.startsWith(m))) {
+			hasConflict = true;
+			reasons.push("merge conflict markers");
+		}
+		if (!hasQuestion && line.startsWith("(??)")) {
+			hasQuestion = true;
+			reasons.push("(??) markers");
+		}
+		if (hasConflict && hasQuestion) break;
+	}
+	return reasons;
+}

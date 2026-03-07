@@ -342,6 +342,15 @@ export const CodePane: React.FC<CodePaneProps> = ({
 		}
 	}, [editorInstance, file.content, externalSyncId, lastSyncId]);
 
+	const [isFlashing, setIsFlashing] = React.useState(false);
+	const flashTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+	const triggerFlash = () => {
+		setIsFlashing(true);
+		if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+		flashTimerRef.current = setTimeout(() => setIsFlashing(false), 1000);
+	};
+
 	return (
 		<div
 			style={{
@@ -388,6 +397,14 @@ export const CodePane: React.FC<CodePaneProps> = ({
 					}
 					.nav-btn-conflict {
 						color: var(--vscode-errorForeground, #f48771);
+					}
+					@keyframes flash-red {
+						0% { background-color: #2ea043; }
+						20% { background-color: #f48771; box-shadow: 0 0 10px #f48771; }
+						100% { background-color: #2ea043; }
+					}
+					.button-flash {
+						animation: flash-red 1s ease-out;
 					}
 				`}</style>
 				{onToggleBase && baseSide === "left" && (
@@ -733,8 +750,30 @@ export const CodePane: React.FC<CodePaneProps> = ({
 				>
 					<button
 						type="button"
+						className={isFlashing ? "button-flash" : ""}
 						onClick={() => {
 							if (editorInstance && onCompleteMerge) {
+								const text = editorInstance.getValue();
+								const lines = text.split(/\r?\n/);
+								const conflictMarkers = [
+									"<<<<<<<",
+									"=======",
+									">>>>>>>",
+									"|||||||",
+								];
+								const firstUnresolvedLineIdx = lines.findIndex(
+									(line) =>
+										conflictMarkers.some((m) => line.startsWith(m)) ||
+										line.startsWith("(??)"),
+								);
+
+								if (firstUnresolvedLineIdx !== -1) {
+									triggerFlash();
+									const lineNumber = firstUnresolvedLineIdx + 1;
+									editorInstance.revealLineInCenter(lineNumber);
+									editorInstance.setPosition({ lineNumber, column: 1 });
+									editorInstance.focus();
+								}
 								onCompleteMerge();
 							}
 						}}
