@@ -2,7 +2,7 @@
 	"name": "meld-auto-merge",
 	"displayName": "Meld Merge",
 	"description": "3-way git merge conflict editor, a GNOME Meld Merge port",
-	"version": "0.0.5",
+	"version": "0.0.6",
 	"icon": "images/icon.png",
 	"publisher": "pknowles",
 	"author": "Pyarelal Knowles",
