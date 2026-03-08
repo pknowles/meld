@@ -10,11 +10,9 @@ interface DiffCurtainProps {
 	leftEditor: editor.IStandaloneCodeEditor;
 	rightEditor: editor.IStandaloneCodeEditor;
 	renderTrigger: number; // For triggering re-renders on scroll
-	// When true, the diff's a/b sides are reversed relative to left/right editors.
-	// diffs[0] has a=Merged(right) b=Local(left), so reversed=true swaps them.
-	reversed: boolean;
 	fadeOutLeft?: boolean;
 	fadeOutRight?: boolean;
+	targetSide?: "left" | "right";
 	onApplyChunk?: (chunk: DiffChunk) => void;
 	onDeleteChunk?: (chunk: DiffChunk) => void;
 	onCopyUpChunk?: (chunk: DiffChunk) => void;
@@ -26,9 +24,9 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 	leftEditor,
 	rightEditor,
 	renderTrigger: _renderTrigger,
-	reversed,
 	fadeOutLeft,
 	fadeOutRight,
+	targetSide = "right",
 	onApplyChunk,
 	onDeleteChunk,
 	onCopyUpChunk,
@@ -170,30 +168,19 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 					const leftMax = leftModel ? leftModel.getLineCount() : 1;
 					const rightMax = rightModel ? rightModel.getLineCount() : 1;
 
-					// When reversed, a=right and b=left; otherwise a=left and b=right
 					const leftStartLine = Math.min(
 						leftMax,
-						Math.max(1, (reversed ? chunk.start_b : chunk.start_a) + 1),
+						Math.max(1, chunk.start_a + 1),
 					);
-					const leftEndLine = Math.min(
-						leftMax,
-						Math.max(1, (reversed ? chunk.end_b : chunk.end_a) + 1),
-					);
+					const leftEndLine = Math.min(leftMax, Math.max(1, chunk.end_a + 1));
 					const rightStartLine = Math.min(
 						rightMax,
-						Math.max(1, (reversed ? chunk.start_a : chunk.start_b) + 1),
+						Math.max(1, chunk.start_b + 1),
 					);
-					const rightEndLine = Math.min(
-						rightMax,
-						Math.max(1, (reversed ? chunk.end_a : chunk.end_b) + 1),
-					);
+					const rightEndLine = Math.min(rightMax, Math.max(1, chunk.end_b + 1));
 
-					const leftEmpty = reversed
-						? chunk.start_b === chunk.end_b
-						: chunk.start_a === chunk.end_a;
-					const rightEmpty = reversed
-						? chunk.start_a === chunk.end_a
-						: chunk.start_b === chunk.end_b;
+					const leftEmpty = chunk.start_a === chunk.end_a;
+					const rightEmpty = chunk.start_b === chunk.end_b;
 
 					const y1Top =
 						leftEditor.getTopForLineNumber(leftStartLine) -
@@ -238,11 +225,22 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 									: "var(--vscode-meldMerge-diffCurtainInsertStroke, rgba(0, 200, 0, 0.5))";
 
 					const isReplace = chunk.tag === "replace";
-					const canApply = isReplace || chunk.start_b < chunk.end_b;
-					const canDelete = isReplace || chunk.start_a < chunk.end_a;
+					const isTargetA = targetSide === "left";
+					const isSourceA = !isTargetA;
 
-					const applySide = reversed ? "left" : "right";
-					const deleteSide = reversed ? "right" : "left";
+					const canApply =
+						isReplace ||
+						(isSourceA
+							? chunk.start_a < chunk.end_a
+							: chunk.start_b < chunk.end_b);
+					const canDelete =
+						isReplace ||
+						(isTargetA
+							? chunk.start_a < chunk.end_a
+							: chunk.start_b < chunk.end_b);
+
+					const applySide = isSourceA ? "left" : "right";
+					const deleteSide = targetSide;
 
 					const btnSize = 16;
 					const btnMargin = 3;

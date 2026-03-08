@@ -21,7 +21,7 @@ import type { editor } from "monaco-editor";
 
 import * as React from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Differ } from "../../matchers/diffutil";
+import { Differ, reverse_chunk } from "../../matchers/diffutil";
 import { CodePane } from "./CodePane";
 import { DiffCurtain } from "./DiffCurtain";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -210,7 +210,9 @@ const App: React.FC = () => {
 				.filter((c): c is NonNullable<typeof c> => c !== null);
 			// Replace the inner diffs [1] and [2] while keeping [0] and [3]
 			newDiffs = [...diffsRef.current];
-			newDiffs[1] = leftDiffs;
+			// leftDiffs is [Merged, Local], we want [Local, Merged]
+			newDiffs[1] = leftDiffs.map(reverse_chunk);
+			// rightDiffs is [Merged, Remote], we want [Merged, Remote]
 			newDiffs[2] = rightDiffs;
 			diffsRef.current = newDiffs;
 		}
@@ -239,8 +241,8 @@ const App: React.FC = () => {
 				];
 				const initialDiffs = [
 					null,
-					message.data.diffs[0],
-					message.data.diffs[1],
+					message.data.diffs[0].map(reverse_chunk), // Merged-Local -> Local-Merged
+					message.data.diffs[1], // Merged-Remote -> Merged-Remote
 					null,
 				];
 
@@ -299,6 +301,10 @@ const App: React.FC = () => {
 
 				const newDiffs = [...diffsRef.current];
 				const diffIndex = side === "left" ? 0 : 3;
+				// If right side, Payload provides [Remote, BaseR], we want [BaseR, Remote]?
+				// Actually payload is typically [Me, Base].
+				// Side Left: [Local, BaseL] -> A=Local, B=BaseL (Normal)
+				// Side Right: [Remote, BaseR] -> A=Remote, B=BaseR (Reverse)
 				newDiffs[diffIndex] = payloadDiffs;
 				diffsRef.current = newDiffs;
 				setDiffs(newDiffs);
@@ -448,7 +454,10 @@ const App: React.FC = () => {
 			const isLeftBaseComparing = baseCompareHighlighting && !!currentFiles[0];
 			const isRightBaseComparing = baseCompareHighlighting && !!currentFiles[4];
 
-			// Pane 0: Base(L)
+			// Rule: Pane i uses Side A for diffs[i] and Side B for diffs[i-1]
+			// diffs[i] exists for i in [0, 3]
+
+			// Pane 0: Base(L) -> Side A of diffs[0]
 			if (paneIndex === 0 && diffs[0]) {
 				diffs[0].forEach((d) => {
 					processChunk(d, true, 1);
@@ -457,23 +466,27 @@ const App: React.FC = () => {
 			// Pane 1: Local
 			else if (paneIndex === 1) {
 				if (isLeftBaseComparing) {
+					// Compare with Pane 0 -> Side B of diffs[0]
 					if (diffs[0])
 						diffs[0].forEach((d) => {
 							processChunk(d, false, 0);
 						});
 				} else {
+					// Compare with Pane 2 -> Side A of diffs[1]
 					if (diffs[1])
 						diffs[1].forEach((d) => {
-							processChunk(d, false, 2);
+							processChunk(d, true, 2);
 						});
 				}
 			}
 			// Pane 2: Merged
 			else if (paneIndex === 2) {
+				// Compare with Pane 1 -> Side B of diffs[1]
 				if (diffs[1])
 					diffs[1].forEach((d) => {
-						processChunk(d, true, 1);
+						processChunk(d, false, 1);
 					});
+				// Compare with Pane 3 -> Side A of diffs[2]
 				if (diffs[2])
 					diffs[2].forEach((d) => {
 						processChunk(d, true, 3);
@@ -482,18 +495,20 @@ const App: React.FC = () => {
 			// Pane 3: Remote
 			else if (paneIndex === 3) {
 				if (isRightBaseComparing) {
+					// Compare with Pane 4 -> Side A of diffs[3]
 					if (diffs[3])
 						diffs[3].forEach((d) => {
 							processChunk(d, true, 4);
 						});
 				} else {
+					// Compare with Pane 2 -> Side B of diffs[2]
 					if (diffs[2])
 						diffs[2].forEach((d) => {
 							processChunk(d, false, 2);
 						});
 				}
 			}
-			// Pane 4: Base(R)
+			// Pane 4: Base(R) -> Side B of diffs[3]
 			else if (paneIndex === 4 && diffs[3]) {
 				diffs[3].forEach((d) => {
 					processChunk(d, false, 3);
@@ -506,17 +521,25 @@ const App: React.FC = () => {
 
 	const handleApplyChunk = (paneIndex: number, chunk: DiffChunk) => {
 		const sourcePane = paneIndex;
+		const targetPane = 2; // Always target Merged pane at index 2
+		const isSourceA = sourcePane < targetPane;
+
 		const sourceEditor = editorRefs.current[sourcePane];
-		const mergedEditor = editorRefs.current[2]; // Always target Merged pane at index 2
-		if (!sourceEditor || !mergedEditor) return;
+		const targetEditor = editorRefs.current[targetPane];
+		if (!sourceEditor || !targetEditor) return;
 		const sourceModel = sourceEditor.getModel();
-		const mergedModel = mergedEditor.getModel();
-		if (!sourceModel || !mergedModel) return;
+		const targetModel = targetEditor.getModel();
+		if (!sourceModel || !targetModel) return;
 
 		let sourceText = "";
-		if (chunk.start_b < chunk.end_b) {
-			const startLine = chunk.start_b + 1;
-			const endLine = chunk.end_b;
+		const sStart = isSourceA ? chunk.start_a : chunk.start_b;
+		const sEnd = isSourceA ? chunk.end_a : chunk.end_b;
+		const tStart = isSourceA ? chunk.start_b : chunk.start_a;
+		const tEnd = isSourceA ? chunk.end_b : chunk.end_a;
+
+		if (sStart < sEnd) {
+			const startLine = sStart + 1;
+			const endLine = sEnd;
 			const maxEndLine = sourceModel.getLineCount();
 			if (endLine < maxEndLine) {
 				sourceText = sourceModel.getValueInRange({
@@ -532,31 +555,31 @@ const App: React.FC = () => {
 					endLineNumber: maxEndLine,
 					endColumn: sourceModel.getLineMaxColumn(maxEndLine),
 				});
-				if (chunk.end_a < mergedModel.getLineCount() && sourceText !== "") {
+				if (tEnd < targetModel.getLineCount() && sourceText !== "") {
 					sourceText += "\n";
 				}
 			}
 		}
 
-		let startLine = chunk.start_a + 1;
-		const endLine = chunk.end_a;
-		const mergedMaxLine = mergedModel.getLineCount();
+		let startLine = tStart + 1;
+		const endLine = tEnd;
+		const targetMaxLine = targetModel.getLineCount();
 
 		let eLine = endLine + 1;
 		let eCol = 1;
-		if (endLine >= mergedMaxLine) {
-			eLine = mergedMaxLine;
-			eCol = mergedModel.getLineMaxColumn(mergedMaxLine);
+		if (endLine >= targetMaxLine) {
+			eLine = targetMaxLine;
+			eCol = targetModel.getLineMaxColumn(targetMaxLine);
 		}
 
-		if (startLine > mergedMaxLine) {
-			startLine = mergedMaxLine;
-			eLine = mergedMaxLine;
-			const maxCol = mergedModel.getLineMaxColumn(mergedMaxLine);
+		if (startLine > targetMaxLine) {
+			startLine = targetMaxLine;
+			eLine = targetMaxLine;
+			const maxCol = targetModel.getLineMaxColumn(targetMaxLine);
 			if (sourceText && !sourceText.startsWith("\n")) {
 				sourceText = `\n${sourceText}`;
 			}
-			mergedEditor.executeEdits("meld-action", [
+			targetEditor.executeEdits("meld-action", [
 				{
 					range: {
 						startLineNumber: startLine,
@@ -571,7 +594,7 @@ const App: React.FC = () => {
 			return;
 		}
 
-		mergedEditor.executeEdits("meld-action", [
+		targetEditor.executeEdits("meld-action", [
 			{
 				range: {
 					startLineNumber: startLine,
@@ -584,32 +607,36 @@ const App: React.FC = () => {
 			},
 		]);
 	};
+	const handleDeleteChunk = (paneIndex: number, chunk: DiffChunk) => {
+		const targetPane = 2;
+		const targetEditor = editorRefs.current[targetPane];
+		if (!targetEditor) return;
+		const targetModel = targetEditor.getModel();
+		if (!targetModel) return;
 
-	const handleDeleteChunk = (_paneIndex: number, chunk: DiffChunk) => {
-		const mergedEditor = editorRefs.current[2];
-		if (!mergedEditor) return;
-		const mergedModel = mergedEditor.getModel();
-		if (!mergedModel) return;
+		const isTargetA = paneIndex === 2;
+		const tStart = isTargetA ? chunk.start_a : chunk.start_b;
+		const tEnd = isTargetA ? chunk.end_a : chunk.end_b;
 
-		if (chunk.start_a >= chunk.end_a) return;
+		if (tStart >= tEnd) return;
 
-		let startLine = chunk.start_a + 1;
-		const endLine = chunk.end_a;
-		const mergedMaxLine = mergedModel.getLineCount();
+		let startLine = tStart + 1;
+		const endLine = tEnd;
+		const targetMaxLine = targetModel.getLineCount();
 
 		let eLine = endLine + 1;
 		let eCol = 1;
-		if (endLine >= mergedMaxLine) {
-			eLine = mergedMaxLine;
-			eCol = mergedModel.getLineMaxColumn(mergedMaxLine);
+		if (endLine >= targetMaxLine) {
+			eLine = targetMaxLine;
+			eCol = targetModel.getLineMaxColumn(targetMaxLine);
 			if (startLine > 1) {
 				startLine -= 1;
-				eCol = mergedModel.getLineMaxColumn(mergedMaxLine);
-				mergedEditor.executeEdits("meld-action", [
+				eCol = targetModel.getLineMaxColumn(targetMaxLine);
+				targetEditor.executeEdits("meld-action", [
 					{
 						range: {
 							startLineNumber: startLine,
-							startColumn: mergedModel.getLineMaxColumn(startLine),
+							startColumn: targetModel.getLineMaxColumn(startLine),
 							endLineNumber: eLine,
 							endColumn: eCol,
 						},
@@ -621,7 +648,7 @@ const App: React.FC = () => {
 			}
 		}
 
-		mergedEditor.executeEdits("meld-action", [
+		targetEditor.executeEdits("meld-action", [
 			{
 				range: {
 					startLineNumber: startLine,
@@ -637,17 +664,24 @@ const App: React.FC = () => {
 
 	const handleCopyUpChunk = (paneIndex: number, chunk: DiffChunk) => {
 		const sourcePane = paneIndex;
+		const targetPane = 2;
+		const isSourceA = sourcePane < targetPane;
+
 		const sourceEditor = editorRefs.current[sourcePane];
-		const mergedEditor = editorRefs.current[2];
-		if (!sourceEditor || !mergedEditor) return;
+		const targetEditor = editorRefs.current[targetPane];
+		if (!sourceEditor || !targetEditor) return;
 		const sourceModel = sourceEditor.getModel();
-		const mergedModel = mergedEditor.getModel();
-		if (!sourceModel || !mergedModel) return;
+		const targetModel = targetEditor.getModel();
+		if (!sourceModel || !targetModel) return;
 
 		let sourceText = "";
-		if (chunk.start_b < chunk.end_b) {
-			const startLine = chunk.start_b + 1;
-			const endLine = chunk.end_b;
+		const sStart = isSourceA ? chunk.start_a : chunk.start_b;
+		const sEnd = isSourceA ? chunk.end_a : chunk.end_b;
+		const tStart = isSourceA ? chunk.start_b : chunk.start_a;
+
+		if (sStart < sEnd) {
+			const startLine = sStart + 1;
+			const endLine = sEnd;
 			const maxEndLine = sourceModel.getLineCount();
 			if (endLine < maxEndLine) {
 				sourceText = sourceModel.getValueInRange({
@@ -669,14 +703,14 @@ const App: React.FC = () => {
 
 		if (!sourceText) return;
 
-		const startLine = chunk.start_a + 1;
-		const maxLine = mergedModel.getLineCount();
+		const startLine = tStart + 1;
+		const maxLine = targetModel.getLineCount();
 		if (startLine > maxLine) {
-			const maxCol = mergedModel.getLineMaxColumn(maxLine);
+			const maxCol = targetModel.getLineMaxColumn(maxLine);
 			if (!sourceText.startsWith("\n")) {
 				sourceText = `\n${sourceText}`;
 			}
-			mergedEditor.executeEdits("meld-action", [
+			targetEditor.executeEdits("meld-action", [
 				{
 					range: {
 						startLineNumber: maxLine,
@@ -691,7 +725,7 @@ const App: React.FC = () => {
 			return;
 		}
 
-		mergedEditor.executeEdits("meld-action", [
+		targetEditor.executeEdits("meld-action", [
 			{
 				range: {
 					startLineNumber: startLine,
@@ -707,17 +741,24 @@ const App: React.FC = () => {
 
 	const handleCopyDownChunk = (paneIndex: number, chunk: DiffChunk) => {
 		const sourcePane = paneIndex;
+		const targetPane = 2;
+		const isSourceA = sourcePane < targetPane;
+
 		const sourceEditor = editorRefs.current[sourcePane];
-		const mergedEditor = editorRefs.current[2];
-		if (!sourceEditor || !mergedEditor) return;
+		const targetEditor = editorRefs.current[targetPane];
+		if (!sourceEditor || !targetEditor) return;
 		const sourceModel = sourceEditor.getModel();
-		const mergedModel = mergedEditor.getModel();
-		if (!sourceModel || !mergedModel) return;
+		const targetModel = targetEditor.getModel();
+		if (!sourceModel || !targetModel) return;
 
 		let sourceText = "";
-		if (chunk.start_b < chunk.end_b) {
-			const startLine = chunk.start_b + 1;
-			const endLine = chunk.end_b;
+		const sStart = isSourceA ? chunk.start_a : chunk.start_b;
+		const sEnd = isSourceA ? chunk.end_a : chunk.end_b;
+		const tEnd = isSourceA ? chunk.end_b : chunk.end_a;
+
+		if (sStart < sEnd) {
+			const startLine = sStart + 1;
+			const endLine = sEnd;
 			const maxEndLine = sourceModel.getLineCount();
 			if (endLine < maxEndLine) {
 				sourceText = sourceModel.getValueInRange({
@@ -733,7 +774,7 @@ const App: React.FC = () => {
 					endLineNumber: maxEndLine,
 					endColumn: sourceModel.getLineMaxColumn(maxEndLine),
 				});
-				if (chunk.end_a < mergedModel.getLineCount() && sourceText !== "") {
+				if (tEnd < targetModel.getLineCount() && sourceText !== "") {
 					sourceText += "\n";
 				}
 			}
@@ -741,16 +782,16 @@ const App: React.FC = () => {
 
 		if (!sourceText) return;
 
-		const endLine = chunk.end_a;
-		const maxLine = mergedModel.getLineCount();
+		const endLine = tEnd;
+		const maxLine = targetModel.getLineCount();
 		const insertLine = endLine + 1;
 
 		if (insertLine > maxLine) {
-			const maxCol = mergedModel.getLineMaxColumn(maxLine);
+			const maxCol = targetModel.getLineMaxColumn(maxLine);
 			if (sourceText && !sourceText.startsWith("\n")) {
 				sourceText = `\n${sourceText}`;
 			}
-			mergedEditor.executeEdits("meld-action", [
+			targetEditor.executeEdits("meld-action", [
 				{
 					range: {
 						startLineNumber: maxLine,
@@ -765,7 +806,7 @@ const App: React.FC = () => {
 			return;
 		}
 
-		mergedEditor.executeEdits("meld-action", [
+		targetEditor.executeEdits("meld-action", [
 			{
 				range: {
 					startLineNumber: insertLine,
@@ -1000,7 +1041,7 @@ const App: React.FC = () => {
 										leftEditor={editorRefs.current[leftEditorIdx]}
 										rightEditor={editorRefs.current[rightEditorIdx]}
 										renderTrigger={renderTrigger}
-										reversed={index === 1 || index === 3} // diffs[1] (A=2, B=1) and diff[3] (A=4, B=3) are reversed
+										targetSide={index === 1 ? "right" : "left"}
 										fadeOutLeft={fadeOutLeft}
 										fadeOutRight={fadeOutRight}
 										onApplyChunk={

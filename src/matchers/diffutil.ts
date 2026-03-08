@@ -29,7 +29,7 @@ const opcode_reverse: Record<DiffChunkTag | string, DiffChunkTag> = {
 	equal: "equal",
 };
 
-function reverse_chunk(chunk: DiffChunk): DiffChunk {
+export function reverse_chunk(chunk: DiffChunk): DiffChunk {
 	const tag = opcode_reverse[chunk.tag];
 	return {
 		tag,

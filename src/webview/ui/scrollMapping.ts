@@ -324,17 +324,10 @@ export function mapLineAcrossChunks(
  * @param sourceLine The starting line number on the source pane
  * @param sourceIdx The index of the pane we are starting from
  * @param targetIdx The index of the pane we want to map to
- * @param diffs Array where diffs[i] connects pane i and pane i+1
+ * @param diffs Array where diffs[i] connects pane i and pane i+1.
+ *        By convention, diffs[i].sideA is pane[i] and diffs[i].sideB is pane[i+1].
  * @param paneLineCounts Array of maximum line counts for each pane (used for clamping)
  * @param smooth Whether to use proportional interpolation instead of discrete jumps
- * @param diffIsReversed [CRITICAL] Array mapping diff indices to their L/R inversion state.
- *        By default (false), diffs[i].sideA is pane[i] and diffs[i].sideB is pane[i+1].
- *        When true, Side A is assumed to be pane[i+1] and Side B is pane[i].
- *
- * NOTE: This is required for the 5-way merge view because the payload provides
- * some diffs (like Local vs Merged) where Side A is the "Merged" pane on the right.
- * Correct usage for the 5-way view is typically: [false, true, false, true].
- *
  * @returns The mapped line number on the target pane
  */
 export function mapLineAcrossPanes(
@@ -344,11 +337,7 @@ export function mapLineAcrossPanes(
 	diffs: (DiffChunk[] | null)[],
 	paneLineCounts: number[],
 	smooth: boolean,
-	diffIsReversed: boolean[],
 ): number {
-	if (diffIsReversed.length === 0) {
-		throw new Error("Missing 'diffIsReversed' argument in mapLineAcrossPanes");
-	}
 	if (sourceIdx === targetIdx) {
 		return sourceLine;
 	}
@@ -363,8 +352,9 @@ export function mapLineAcrossPanes(
 	const targetStepIdx = isMovingRight ? sourceIdx + 1 : sourceIdx - 1;
 
 	const chunks = diffs[diffIdx];
-	const isBackwards = diffIsReversed[diffIdx] || false;
-	const sourceIsA = isBackwards ? !isMovingRight : isMovingRight;
+	// If moving right (i -> i+1), we start at A (index i).
+	// If moving left (i+1 -> i), we start at B (index i+1).
+	const sourceIsA = isMovingRight;
 
 	const srcMax = paneLineCounts[sourceIdx];
 	const tgtMax = paneLineCounts[targetStepIdx];
@@ -391,6 +381,5 @@ export function mapLineAcrossPanes(
 		diffs,
 		paneLineCounts,
 		smooth,
-		diffIsReversed,
 	);
 }
