@@ -2,6 +2,8 @@
 import type { DiffChunkTag } from "../../matchers/myers.ts";
 
 export const DIFF_WIDTH = 40;
+export const ANIMATION_DURATION = 430;
+export const ANIMATION_TRANSITION = "margin 0.4s cubic-bezier(0.4, 0, 0.2, 1)";
 
 export const PaneIndex = {
 	baseLeft: 0,
