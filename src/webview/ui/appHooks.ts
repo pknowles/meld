@@ -286,7 +286,6 @@ export const useAppNavigation = (
 ) =>
 	useCallback(
 		(dir: "prev" | "next", type: "diff" | "conflict") => {
-			const ed = editorRefs.current?.[3] ?? editorRefs.current?.[2]; // Fallback to middle if remote not yet loaded
 			const targetEd = editorRefs.current?.[2];
 			if (!targetEd) {
 				return;

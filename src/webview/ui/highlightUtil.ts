@@ -1,9 +1,6 @@
-// Copyright (C) 2026 Pyarelal Knowles, GPL v2
-
 import { diffChars } from "diff";
 import type { DiffChunk, FileState, Highlight } from "./types.ts";
 
-// Must match the splitLines used in App.tsx
 const splitLines = (text: string) => {
 	const lines = text.split("\n");
 	if (lines.length > 0 && lines.at(-1) === "") {
@@ -28,17 +25,14 @@ const calculateReplaceHighlights = (ctx: ReplaceContext): Highlight[] => {
 	const otherStartLine = useA ? chunk.startB : chunk.startA;
 	const otherEndLine = useA ? chunk.endB : chunk.endA;
 
-	// Our text
 	const myLines = splitLines(innerFile.content).slice(startLine, endLine);
-	const myText = myLines.join("\n") + (myLines.length > 0 ? "\n" : "");
+	const myText = `${myLines.join("\n")}${myLines.length > 0 ? "\n" : ""}`;
 
-	// Other text
 	const otherLines = splitLines(outerFile.content).slice(
 		otherStartLine,
 		otherEndLine,
 	);
-	const otherText =
-		otherLines.join("\n") + (otherLines.length > 0 ? "\n" : "");
+	const otherText = `${otherLines.join("\n")}${otherLines.length > 0 ? "\n" : ""}`;
 
 	const changes = diffChars(myText, otherText);
 	let currentLine = startLine + 1;
@@ -108,86 +102,83 @@ const processChunk = (
 	}
 };
 
-function getHighlights0(
-	files: (FileState | null)[],
-	diffs: (DiffChunk[] | null)[],
-): Highlight[] {
+type F = (FileState | null)[];
+type D = (DiffChunk[] | null)[];
+
+function getHighlights0(files: F, diffs: D): Highlight[] {
 	const h: Highlight[] = [];
 	const d = diffs[0];
-	if (d) {
+	if (d && files.length > 1) {
 		for (const c of d) {
-			processChunk(h, c, true, files[0], files[1]);
+			processChunk(h, c, true, files[0] ?? null, files[1] ?? null);
 		}
 	}
 	return h;
 }
 
-function getHighlights1(
-	files: (FileState | null)[],
-	diffs: (DiffChunk[] | null)[],
-	isLBC: boolean,
-): Highlight[] {
+function getHighlights1(files: F, diffs: D, isLBC: boolean): Highlight[] {
 	const h: Highlight[] = [];
 	const d = isLBC ? diffs[0] : diffs[1];
-	if (d) {
+	if (d && files.length > 2) {
 		for (const c of d) {
-			processChunk(h, c, false, files[1], isLBC ? files[0] : files[2]);
+			processChunk(
+				h,
+				c,
+				false,
+				files[1] ?? null,
+				isLBC ? (files[0] ?? null) : (files[2] ?? null),
+			);
 		}
 	}
 	return h;
 }
 
-function getHighlights2(
-	files: (FileState | null)[],
-	diffs: (DiffChunk[] | null)[],
-): Highlight[] {
+function getHighlights2(files: F, diffs: D): Highlight[] {
 	const h: Highlight[] = [];
 	const [d1, d2] = [diffs[1], diffs[2]];
-	if (d1) {
-		for (const c of d1) {
-			processChunk(h, c, true, files[2], files[1]);
+	if (files.length > 3) {
+		if (d1) {
+			for (const c of d1) {
+				processChunk(h, c, true, files[2] ?? null, files[1] ?? null);
+			}
 		}
-	}
-	if (d2) {
-		for (const c of d2) {
-			processChunk(h, c, true, files[2], files[3]);
+		if (d2) {
+			for (const c of d2) {
+				processChunk(h, c, true, files[2] ?? null, files[3] ?? null);
+			}
 		}
 	}
 	return h;
 }
 
-function getHighlights3(
-	files: (FileState | null)[],
-	diffs: (DiffChunk[] | null)[],
-	isRBC: boolean,
-): Highlight[] {
+function getHighlights3(files: F, diffs: D, isRBC: boolean): Highlight[] {
 	const h: Highlight[] = [];
 	const d = isRBC ? diffs[3] : diffs[2];
-	if (d) {
+	if (d && files.length > 4) {
 		for (const c of d) {
-			processChunk(h, c, isRBC, files[3], isRBC ? files[4] : files[2]);
+			processChunk(
+				h,
+				c,
+				isRBC,
+				files[3] ?? null,
+				isRBC ? (files[4] ?? null) : (files[2] ?? null),
+			);
 		}
 	}
 	return h;
 }
 
-function getHighlights4(
-	files: (FileState | null)[],
-	diffs: (DiffChunk[] | null)[],
-): Highlight[] {
+function getHighlights4(files: F, diffs: D): Highlight[] {
 	const h: Highlight[] = [];
 	const d = diffs[3];
-	if (d) {
+	if (d && files.length > 4) {
 		for (const c of d) {
-			processChunk(h, c, false, files[4], files[3]);
+			processChunk(h, c, false, files[4] ?? null, files[3] ?? null);
 		}
 	}
 	return h;
 }
 
-/**
- * Gets highlights for a specific pane.
- */
 export function getPaneHighlights(
 	paneIndex: number,
 	files: (FileState | null)[],
