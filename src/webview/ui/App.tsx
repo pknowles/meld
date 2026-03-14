@@ -352,14 +352,14 @@ const useAppNavigation = (
 							: c;
 				}
 			} else if (idx === -1) {
-					target = sorted[n - 1] as DiffChunk;
-				} else {
-					const c = sorted[idx] as DiffChunk;
-					target =
-						c.startA + 1 < cur
-							? c
-							: (sorted[(idx - 1 + n) % n] as DiffChunk);
-				}
+				target = sorted[n - 1] as DiffChunk;
+			} else {
+				const c = sorted[idx] as DiffChunk;
+				target =
+					c.startA + 1 < cur
+						? c
+						: (sorted[(idx - 1 + n) % n] as DiffChunk);
+			}
 			ed.revealLineInCenter(target.startA + 1);
 			ed.setPosition({ lineNumber: target.startA + 1, column: 1 });
 			ed.focus();
