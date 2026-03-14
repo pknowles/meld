@@ -224,17 +224,18 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 									? "var(--vscode-meldMerge-diffCurtainDeleteStroke, rgba(0, 200, 0, 0.5))"
 									: "var(--vscode-meldMerge-diffCurtainInsertStroke, rgba(0, 200, 0, 0.5))";
 
-					const isReplace = chunk.tag === "replace";
+					const isActionable =
+						chunk.tag === "replace" || chunk.tag === "conflict";
 					const isTargetA = targetSide === "left";
 					const isSourceA = !isTargetA;
 
 					const canApply =
-						isReplace ||
+						isActionable ||
 						(isSourceA
 							? chunk.start_a < chunk.end_a
 							: chunk.start_b < chunk.end_b);
 					const canDelete =
-						isReplace ||
+						isActionable ||
 						(isTargetA
 							? chunk.start_a < chunk.end_a
 							: chunk.start_b < chunk.end_b);
@@ -285,7 +286,7 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 								stroke={strokeColor}
 								strokeWidth="1"
 							/>
-							{canApply && onCopyUpChunk && isReplace && (
+							{canApply && onCopyUpChunk && isActionable && (
 								<foreignObject
 									x={applyX}
 									y={upY}
@@ -315,13 +316,13 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 										type="button"
 										className="diff-btn"
 										onClick={() => onApplyChunk(chunk)}
-										title="Push chunk to Merged"
+										title="Push chunk to target"
 									>
 										{applySide === "left" ? "➔" : "⬅"}
 									</button>
 								</foreignObject>
 							)}
-							{canApply && onCopyDownChunk && isReplace && (
+							{canApply && onCopyDownChunk && isActionable && (
 								<foreignObject
 									x={applyX}
 									y={downY}
@@ -351,7 +352,7 @@ export const DiffCurtain: React.FC<DiffCurtainProps> = ({
 										type="button"
 										className="diff-btn diff-cross-icon"
 										onClick={() => onDeleteChunk(chunk)}
-										title="Delete chunk from Merged"
+										title="Delete chunk from target"
 									>
 										×
 									</button>

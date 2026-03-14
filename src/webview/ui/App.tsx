@@ -127,8 +127,8 @@ const App: React.FC = () => {
 	const [renderTrigger, setRenderTrigger] = useState(0);
 	const editorRefs = useRef<editor.IStandaloneCodeEditor[]>([]);
 
-	const [renderBaseLeft, setRenderBaseLeft] = useState(!!files[0]);
-	const [renderBaseRight, setRenderBaseRight] = useState(!!files[4]);
+	const [renderBaseLeft, setRenderBaseLeft] = useState(false);
+	const [renderBaseRight, setRenderBaseRight] = useState(false);
 
 	useLayoutEffect(() => {
 		if (files[0]) {
@@ -167,10 +167,6 @@ const App: React.FC = () => {
 	const prevBaseRightDiffs = usePreviousNonNull(diffs[3] || null);
 
 	const commitModelUpdate = React.useCallback((value: string) => {
-		// All computation must happen outside the setFiles updater.
-		// Calling setDiffs() inside setFiles(updater) is illegal in React — it causes
-		// diffs to become undefined for a frame, DiffCurtain early-outs to null, and
-		// the entire UI goes blank.
 		const files = filesRef.current;
 		const localFile = files[1];
 		const midFile = files[2];
@@ -208,11 +204,9 @@ const App: React.FC = () => {
 			const rightDiffs = differ._merge_cache
 				.map((pair) => pair[1])
 				.filter((c): c is NonNullable<typeof c> => c !== null);
-			// Replace the inner diffs [1] and [2] while keeping [0] and [3]
+
 			newDiffs = [...diffsRef.current];
-			// leftDiffs is [Merged, Local], we want [Local, Merged]
 			newDiffs[1] = leftDiffs.map(reverse_chunk);
-			// rightDiffs is [Merged, Remote], we want [Merged, Remote]
 			newDiffs[2] = rightDiffs;
 			diffsRef.current = newDiffs;
 		}
@@ -231,7 +225,6 @@ const App: React.FC = () => {
 		const handleMessage = (event: MessageEvent) => {
 			const message = event.data;
 			if (message.command === "loadDiff") {
-				// Initialize the 5-element array with nulls for the Base slots
 				const initialFiles = [
 					null,
 					message.data.files[0],
@@ -241,8 +234,8 @@ const App: React.FC = () => {
 				];
 				const initialDiffs = [
 					null,
-					message.data.diffs[0].map(reverse_chunk), // Merged-Local -> Local-Merged
-					message.data.diffs[1], // Merged-Remote -> Merged-Remote
+					message.data.diffs[0].map(reverse_chunk),
+					message.data.diffs[1],
 					null,
 				];
 
@@ -250,9 +243,6 @@ const App: React.FC = () => {
 				setFiles(initialFiles);
 				setDiffs(initialDiffs);
 				diffsRef.current = initialDiffs;
-				// We bump externalSyncId here because a loadDiff is conceptually an external sync
-				// from the extension that provides entirely new file contents we need to push into Monaco
-				// via computeMinimalEdits, preserving the undo stack.
 				setExternalSyncId((id) => id + 1);
 				if (message.data.config?.debounceDelay !== undefined) {
 					setDebounceDelay(message.data.config.debounceDelay);
@@ -285,7 +275,7 @@ const App: React.FC = () => {
 				}
 				differRef.current = differ;
 
-				setTimeout(() => setRenderTrigger((prev) => prev + 1), 100); // HACK: gemini's approach to synchronization
+				setTimeout(() => setRenderTrigger((prev) => prev + 1), 100);
 			} else if (message.command === "loadBaseDiff") {
 				const {
 					side,
@@ -301,14 +291,10 @@ const App: React.FC = () => {
 
 				const newDiffs = [...diffsRef.current];
 				const diffIndex = side === "left" ? 0 : 3;
-				// If right side, Payload provides [Remote, BaseR], we want [BaseR, Remote]?
-				// Actually payload is typically [Me, Base].
-				// Side Left: [Local, BaseL] -> A=Local, B=BaseL (Normal)
-				// Side Right: [Remote, BaseR] -> A=Remote, B=BaseR (Reverse)
 				newDiffs[diffIndex] = payloadDiffs;
 				diffsRef.current = newDiffs;
 				setDiffs(newDiffs);
-				setTimeout(() => setRenderTrigger((prev) => prev + 1), 100); // HACK: gemini's approach to synchronization
+				setTimeout(() => setRenderTrigger((prev) => prev + 1), 100);
 			} else if (message.command === "updateContent") {
 				setExternalSyncId((id) => id + 1);
 				commitModelUpdate(message.text);
@@ -348,24 +334,17 @@ const App: React.FC = () => {
 		attachScrollListener(editor, index);
 
 		if (index === 0) {
-			setTimeout(() => {
-				forceSyncToPane(1, 0);
-			}, 50);
+			setTimeout(() => forceSyncToPane(1, 0), 50);
 		} else if (index === 4) {
-			setTimeout(() => {
-				forceSyncToPane(3, 4);
-			}, 50);
+			setTimeout(() => forceSyncToPane(3, 4), 50);
 		}
 	};
 
 	const handleEditorChange = React.useMemo(
 		() =>
 			debounce((value: string | undefined, index: number) => {
-				// files[2] is always the Merged index
 				if (value === undefined || index !== 2) return;
-
 				commitModelUpdate(value);
-
 				vscodeApi?.postMessage({ command: "contentChanged", text: value });
 			}, debounceDelay),
 		[debounceDelay, commitModelUpdate, vscodeApi],
@@ -398,19 +377,15 @@ const App: React.FC = () => {
 				if (chunk.tag === "replace" && startLine < endLine) {
 					const otherStartLine = useA ? chunk.start_b : chunk.start_a;
 					const otherEndLine = useA ? chunk.end_b : chunk.end_a;
-
 					const outerFile = currentFiles[otherPaneIndex];
 					const innerFile = currentFiles[paneIndex];
 					if (!innerFile || !outerFile) return;
 
-					// Our text
 					const myLines = splitLines(innerFile.content).slice(
 						startLine,
 						endLine,
 					);
 					const myText = myLines.join("\n") + (myLines.length > 0 ? "\n" : "");
-
-					// Other text
 					const otherLines = splitLines(outerFile.content).slice(
 						otherStartLine,
 						otherEndLine,
@@ -430,7 +405,6 @@ const App: React.FC = () => {
 								? currentColumn + lines[0].length
 								: lines[lines.length - 1].length + 1;
 
-						// the diffChars output is relative to myText. So removed means it's in myText but not otherText
 						if (change.removed) {
 							highlights.push({
 								startLine: currentLine,
@@ -442,7 +416,6 @@ const App: React.FC = () => {
 							});
 						}
 
-						// We only advance our position for text that exists in myText (removed or equal)
 						if (!change.added) {
 							currentLine = nextLine;
 							currentColumn = nextColumn;
@@ -454,62 +427,40 @@ const App: React.FC = () => {
 			const isLeftBaseComparing = baseCompareHighlighting && !!currentFiles[0];
 			const isRightBaseComparing = baseCompareHighlighting && !!currentFiles[4];
 
-			// Rule: Pane i uses Side A for diffs[i] and Side B for diffs[i-1]
-			// diffs[i] exists for i in [0, 3]
-
-			// Pane 0: Base(L) -> Side A of diffs[0]
 			if (paneIndex === 0 && diffs[0]) {
 				diffs[0].forEach((d) => {
 					processChunk(d, true, 1);
 				});
-			}
-			// Pane 1: Local
-			else if (paneIndex === 1) {
-				if (isLeftBaseComparing) {
-					// Compare with Pane 0 -> Side B of diffs[0]
-					if (diffs[0])
-						diffs[0].forEach((d) => {
-							processChunk(d, false, 0);
-						});
-				} else {
-					// Compare with Pane 2 -> Side A of diffs[1]
-					if (diffs[1])
-						diffs[1].forEach((d) => {
-							processChunk(d, true, 2);
-						});
+			} else if (paneIndex === 1) {
+				if (isLeftBaseComparing && diffs[0]) {
+					diffs[0].forEach((d) => {
+						processChunk(d, false, 0);
+					});
+				} else if (diffs[1]) {
+					diffs[1].forEach((d) => {
+						processChunk(d, true, 2);
+					});
 				}
-			}
-			// Pane 2: Merged
-			else if (paneIndex === 2) {
-				// Compare with Pane 1 -> Side B of diffs[1]
+			} else if (paneIndex === 2) {
 				if (diffs[1])
 					diffs[1].forEach((d) => {
 						processChunk(d, false, 1);
 					});
-				// Compare with Pane 3 -> Side A of diffs[2]
 				if (diffs[2])
 					diffs[2].forEach((d) => {
 						processChunk(d, true, 3);
 					});
-			}
-			// Pane 3: Remote
-			else if (paneIndex === 3) {
-				if (isRightBaseComparing) {
-					// Compare with Pane 4 -> Side A of diffs[3]
-					if (diffs[3])
-						diffs[3].forEach((d) => {
-							processChunk(d, true, 4);
-						});
-				} else {
-					// Compare with Pane 2 -> Side B of diffs[2]
-					if (diffs[2])
-						diffs[2].forEach((d) => {
-							processChunk(d, false, 2);
-						});
+			} else if (paneIndex === 3) {
+				if (isRightBaseComparing && diffs[3]) {
+					diffs[3].forEach((d) => {
+						processChunk(d, true, 4);
+					});
+				} else if (diffs[2]) {
+					diffs[2].forEach((d) => {
+						processChunk(d, false, 2);
+					});
 				}
-			}
-			// Pane 4: Base(R) -> Side B of diffs[3]
-			else if (paneIndex === 4 && diffs[3]) {
+			} else if (paneIndex === 4 && diffs[3]) {
 				diffs[3].forEach((d) => {
 					processChunk(d, false, 3);
 				});
@@ -519,11 +470,12 @@ const App: React.FC = () => {
 		[diffs, files, baseCompareHighlighting],
 	);
 
-	const handleApplyChunk = (paneIndex: number, chunk: DiffChunk) => {
-		const sourcePane = paneIndex;
-		const targetPane = 2; // Always target Merged pane at index 2
-		const isSourceA = sourcePane < targetPane;
+	const handleApplyChunk = (sourcePane: number, chunk: DiffChunk) => {
+		let targetPane = 2;
+		if (sourcePane === 0) targetPane = 1;
+		if (sourcePane === 4) targetPane = 3;
 
+		const isSourceA = sourcePane < targetPane;
 		const sourceEditor = editorRefs.current[sourcePane];
 		const targetEditor = editorRefs.current[targetPane];
 		if (!sourceEditor || !targetEditor) return;
@@ -591,33 +543,47 @@ const App: React.FC = () => {
 					forceMoveMarkers: true,
 				},
 			]);
-			return;
+		} else {
+			targetEditor.executeEdits("meld-action", [
+				{
+					range: {
+						startLineNumber: startLine,
+						startColumn: 1,
+						endLineNumber: eLine,
+						endColumn: eCol,
+					},
+					text: sourceText,
+					forceMoveMarkers: true,
+				},
+			]);
+		}
+	};
+
+	const handleDeleteChunk = (curtainIndex: number, chunk: DiffChunk) => {
+		let targetPane = 2;
+		let isTargetA = false;
+
+		if (curtainIndex === 0) {
+			targetPane = 1;
+			isTargetA = false;
+		} else if (curtainIndex === 1) {
+			targetPane = 2;
+			isTargetA = false;
+		} else if (curtainIndex === 2) {
+			targetPane = 2;
+			isTargetA = true;
+		} else if (curtainIndex === 3) {
+			targetPane = 3;
+			isTargetA = true;
 		}
 
-		targetEditor.executeEdits("meld-action", [
-			{
-				range: {
-					startLineNumber: startLine,
-					startColumn: 1,
-					endLineNumber: eLine,
-					endColumn: eCol,
-				},
-				text: sourceText,
-				forceMoveMarkers: true,
-			},
-		]);
-	};
-	const handleDeleteChunk = (paneIndex: number, chunk: DiffChunk) => {
-		const targetPane = 2;
 		const targetEditor = editorRefs.current[targetPane];
 		if (!targetEditor) return;
 		const targetModel = targetEditor.getModel();
 		if (!targetModel) return;
 
-		const isTargetA = paneIndex === 2;
 		const tStart = isTargetA ? chunk.start_a : chunk.start_b;
 		const tEnd = isTargetA ? chunk.end_a : chunk.end_b;
-
 		if (tStart >= tEnd) return;
 
 		let startLine = tStart + 1;
@@ -632,19 +598,6 @@ const App: React.FC = () => {
 			if (startLine > 1) {
 				startLine -= 1;
 				eCol = targetModel.getLineMaxColumn(targetMaxLine);
-				targetEditor.executeEdits("meld-action", [
-					{
-						range: {
-							startLineNumber: startLine,
-							startColumn: targetModel.getLineMaxColumn(startLine),
-							endLineNumber: eLine,
-							endColumn: eCol,
-						},
-						text: "",
-						forceMoveMarkers: true,
-					},
-				]);
-				return;
 			}
 		}
 
@@ -662,159 +615,75 @@ const App: React.FC = () => {
 		]);
 	};
 
-	const handleCopyUpChunk = (paneIndex: number, chunk: DiffChunk) => {
-		const sourcePane = paneIndex;
-		const targetPane = 2;
-		const isSourceA = sourcePane < targetPane;
+	const handleCopyUpChunk = (sourcePane: number, chunk: DiffChunk) => {
+		let targetPane = 2;
+		if (sourcePane === 0) targetPane = 1;
+		if (sourcePane === 4) targetPane = 3;
 
+		const isSourceA = sourcePane < targetPane;
 		const sourceEditor = editorRefs.current[sourcePane];
 		const targetEditor = editorRefs.current[targetPane];
 		if (!sourceEditor || !targetEditor) return;
 		const sourceModel = sourceEditor.getModel();
-		const targetModel = targetEditor.getModel();
-		if (!sourceModel || !targetModel) return;
+		if (!sourceModel) return;
 
-		let sourceText = "";
 		const sStart = isSourceA ? chunk.start_a : chunk.start_b;
 		const sEnd = isSourceA ? chunk.end_a : chunk.end_b;
 		const tStart = isSourceA ? chunk.start_b : chunk.start_a;
 
-		if (sStart < sEnd) {
-			const startLine = sStart + 1;
-			const endLine = sEnd;
-			const maxEndLine = sourceModel.getLineCount();
-			if (endLine < maxEndLine) {
-				sourceText = sourceModel.getValueInRange({
-					startLineNumber: startLine,
-					startColumn: 1,
-					endLineNumber: endLine + 1,
-					endColumn: 1,
-				});
-			} else {
-				sourceText = sourceModel.getValueInRange({
-					startLineNumber: startLine,
-					startColumn: 1,
-					endLineNumber: maxEndLine,
-					endColumn: sourceModel.getLineMaxColumn(maxEndLine),
-				});
-				sourceText += "\n";
-			}
-		}
-
-		if (!sourceText) return;
-
-		const startLine = tStart + 1;
-		const maxLine = targetModel.getLineCount();
-		if (startLine > maxLine) {
-			const maxCol = targetModel.getLineMaxColumn(maxLine);
-			if (!sourceText.startsWith("\n")) {
-				sourceText = `\n${sourceText}`;
-			}
-			targetEditor.executeEdits("meld-action", [
-				{
-					range: {
-						startLineNumber: maxLine,
-						startColumn: maxCol,
-						endLineNumber: maxLine,
-						endColumn: maxCol,
-					},
-					text: sourceText,
-					forceMoveMarkers: true,
-				},
-			]);
-			return;
-		}
+		const sourceText = sourceModel.getValueInRange({
+			startLineNumber: sStart + 1,
+			startColumn: 1,
+			endLineNumber: sEnd,
+			endColumn: sourceModel.getLineMaxColumn(sEnd),
+		});
 
 		targetEditor.executeEdits("meld-action", [
 			{
 				range: {
-					startLineNumber: startLine,
+					startLineNumber: tStart + 1,
 					startColumn: 1,
-					endLineNumber: startLine,
+					endLineNumber: tStart + 1,
 					endColumn: 1,
 				},
-				text: sourceText,
+				text: `${sourceText}\n`,
 				forceMoveMarkers: true,
 			},
 		]);
 	};
 
-	const handleCopyDownChunk = (paneIndex: number, chunk: DiffChunk) => {
-		const sourcePane = paneIndex;
-		const targetPane = 2;
-		const isSourceA = sourcePane < targetPane;
+	const handleCopyDownChunk = (sourcePane: number, chunk: DiffChunk) => {
+		let targetPane = 2;
+		if (sourcePane === 0) targetPane = 1;
+		if (sourcePane === 4) targetPane = 3;
 
+		const isSourceA = sourcePane < targetPane;
 		const sourceEditor = editorRefs.current[sourcePane];
 		const targetEditor = editorRefs.current[targetPane];
 		if (!sourceEditor || !targetEditor) return;
 		const sourceModel = sourceEditor.getModel();
-		const targetModel = targetEditor.getModel();
-		if (!sourceModel || !targetModel) return;
+		if (!sourceModel) return;
 
-		let sourceText = "";
 		const sStart = isSourceA ? chunk.start_a : chunk.start_b;
 		const sEnd = isSourceA ? chunk.end_a : chunk.end_b;
 		const tEnd = isSourceA ? chunk.end_b : chunk.end_a;
 
-		if (sStart < sEnd) {
-			const startLine = sStart + 1;
-			const endLine = sEnd;
-			const maxEndLine = sourceModel.getLineCount();
-			if (endLine < maxEndLine) {
-				sourceText = sourceModel.getValueInRange({
-					startLineNumber: startLine,
-					startColumn: 1,
-					endLineNumber: endLine + 1,
-					endColumn: 1,
-				});
-			} else {
-				sourceText = sourceModel.getValueInRange({
-					startLineNumber: startLine,
-					startColumn: 1,
-					endLineNumber: maxEndLine,
-					endColumn: sourceModel.getLineMaxColumn(maxEndLine),
-				});
-				if (tEnd < targetModel.getLineCount() && sourceText !== "") {
-					sourceText += "\n";
-				}
-			}
-		}
-
-		if (!sourceText) return;
-
-		const endLine = tEnd;
-		const maxLine = targetModel.getLineCount();
-		const insertLine = endLine + 1;
-
-		if (insertLine > maxLine) {
-			const maxCol = targetModel.getLineMaxColumn(maxLine);
-			if (sourceText && !sourceText.startsWith("\n")) {
-				sourceText = `\n${sourceText}`;
-			}
-			targetEditor.executeEdits("meld-action", [
-				{
-					range: {
-						startLineNumber: maxLine,
-						startColumn: maxCol,
-						endLineNumber: maxLine,
-						endColumn: maxCol,
-					},
-					text: sourceText,
-					forceMoveMarkers: true,
-				},
-			]);
-			return;
-		}
+		const sourceText = sourceModel.getValueInRange({
+			startLineNumber: sStart + 1,
+			startColumn: 1,
+			endLineNumber: sEnd,
+			endColumn: sourceModel.getLineMaxColumn(sEnd),
+		});
 
 		targetEditor.executeEdits("meld-action", [
 			{
 				range: {
-					startLineNumber: insertLine,
+					startLineNumber: tEnd + 1,
 					startColumn: 1,
-					endLineNumber: insertLine,
+					endLineNumber: tEnd + 1,
 					endColumn: 1,
 				},
-				text: sourceText,
+				text: `${sourceText}\n`,
 				forceMoveMarkers: true,
 			},
 		]);
@@ -899,7 +768,6 @@ const App: React.FC = () => {
 	const toggleBaseDiff = (side: "left" | "right") => {
 		const targetIndex = side === "left" ? 0 : 4;
 		if (files[targetIndex]) {
-			// Clear it out
 			const newFiles = [...files];
 			newFiles[targetIndex] = null;
 			filesRef.current = newFiles;
@@ -985,18 +853,15 @@ const App: React.FC = () => {
 							let isBaseActive = false;
 
 							if (index === 1) {
-								// Local
 								onToggleBase = () => toggleBaseDiff("left");
 								baseSide = "left";
 								isBaseActive = !!files[0];
 							} else if (index === 3) {
-								// Remote
 								onToggleBase = () => toggleBaseDiff("right");
 								baseSide = "right";
 								isBaseActive = !!files[4];
 							}
 
-							// Calculate which diff segment connects to the next active pane
 							let diffsForCurtain: DiffChunk[] | null | undefined = null;
 							let leftEditorIdx = index;
 							let rightEditorIdx = index + 1;
@@ -1041,34 +906,27 @@ const App: React.FC = () => {
 										leftEditor={editorRefs.current[leftEditorIdx]}
 										rightEditor={editorRefs.current[rightEditorIdx]}
 										renderTrigger={renderTrigger}
-										targetSide={index === 1 ? "right" : "left"}
+										targetSide={index <= 1 ? "right" : "left"}
 										fadeOutLeft={fadeOutLeft}
 										fadeOutRight={fadeOutRight}
-										onApplyChunk={
-											index === 1
-												? (chunk) => handleApplyChunk(1, chunk)
-												: index === 2
-													? (chunk) => handleApplyChunk(3, chunk)
-													: undefined
+										onApplyChunk={(chunk) =>
+											handleApplyChunk(
+												index === 2 ? 3 : index === 3 ? 4 : index,
+												chunk,
+											)
 										}
-										onDeleteChunk={
-											index === 1 || index === 2
-												? (chunk) => handleDeleteChunk(index, chunk)
-												: undefined
+										onDeleteChunk={(chunk) => handleDeleteChunk(index, chunk)}
+										onCopyUpChunk={(chunk) =>
+											handleCopyUpChunk(
+												index === 2 ? 3 : index === 3 ? 4 : index,
+												chunk,
+											)
 										}
-										onCopyUpChunk={
-											index === 1
-												? (chunk) => handleCopyUpChunk(1, chunk)
-												: index === 2
-													? (chunk) => handleCopyUpChunk(3, chunk)
-													: undefined
-										}
-										onCopyDownChunk={
-											index === 1
-												? (chunk) => handleCopyDownChunk(1, chunk)
-												: index === 2
-													? (chunk) => handleCopyDownChunk(3, chunk)
-													: undefined
+										onCopyDownChunk={(chunk) =>
+											handleCopyDownChunk(
+												index === 2 ? 3 : index === 3 ? 4 : index,
+												chunk,
+											)
 										}
 									/>
 								);
@@ -1123,9 +981,6 @@ const App: React.FC = () => {
 							);
 
 							if (isLeftBase || isRightBase) {
-								// curtainContent is a sibling of AnimatedColumn, NOT inside it.
-								// This ensures the animated div only contains the CodePane
-								// and is the same width as all other editor columns.
 								return (
 									<React.Fragment key={index}>
 										<AnimatedColumn
