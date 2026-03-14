@@ -35,29 +35,23 @@ const STANDARD_DIFFS: (DiffChunk[] | null)[] = [
 describe("5-Pane Scroll Mapping Basic Tests", () => {
 	it("should map from Local to Merged without throwing even if Merged is longer", () => {
 		expect(() => {
-			mapLineAcrossPanes(
-				SOURCE_LINE_MIDDLE,
-				PANE_LOCAL,
-				PANE_MERGED,
-				STANDARD_DIFFS,
-				PANE_COUNTS,
-				true,
-				[false, true, false, false],
-			);
+			mapLineAcrossPanes(SOURCE_LINE_MIDDLE, PANE_LOCAL, PANE_MERGED, {
+				diffs: STANDARD_DIFFS,
+				paneLineCounts: PANE_COUNTS,
+				smooth: true,
+				diffIsReversed: [false, true, false, false],
+			});
 		}).not.toThrow();
 	});
 
 	it("should throw if the reversal is NOT specified (repro of the bug)", () => {
 		expect(() => {
-			mapLineAcrossPanes(
-				SOURCE_LINE_MIDDLE,
-				PANE_LOCAL,
-				PANE_MERGED,
-				STANDARD_DIFFS,
-				PANE_COUNTS,
-				true,
-				[false, false, false, false],
-			);
+			mapLineAcrossPanes(SOURCE_LINE_MIDDLE, PANE_LOCAL, PANE_MERGED, {
+				diffs: STANDARD_DIFFS,
+				paneLineCounts: PANE_COUNTS,
+				smooth: true,
+				diffIsReversed: [false, false, false, false],
+			});
 		}).toThrow("last chunk outside _sourceMaxLines");
 	});
 
@@ -75,15 +69,12 @@ describe("5-Pane Scroll Mapping Basic Tests", () => {
 			LINE_COUNT_SHORT,
 			LINE_COUNT_SHORT,
 		];
-		const res = mapLineAcrossPanes(
-			SOURCE_LINE_MIDDLE,
-			PANE_MERGED,
-			PANE_LOCAL,
-			emptyDiffs,
-			counts,
-			true,
-			[false, true, false, false],
-		);
+		const res = mapLineAcrossPanes(SOURCE_LINE_MIDDLE, PANE_MERGED, PANE_LOCAL, {
+			diffs: emptyDiffs,
+			paneLineCounts: counts,
+			smooth: true,
+			diffIsReversed: [false, true, false, false],
+		});
 		expect(res).toBeLessThan(1);
 		expect(res).toBeGreaterThanOrEqual(0);
 	});
@@ -91,15 +82,12 @@ describe("5-Pane Scroll Mapping Basic Tests", () => {
 
 describe("5-Pane Scroll Mapping Advanced Tests", () => {
 	it("maps correctly from Local to Merged with disproportionate sizes", () => {
-		const result = mapLineAcrossPanes(
-			SOURCE_LINE_MIDDLE,
-			PANE_LOCAL,
-			PANE_MERGED,
-			STANDARD_DIFFS,
-			PANE_COUNTS,
-			true,
-			[false, true, false, true],
-		);
+		const result = mapLineAcrossPanes(SOURCE_LINE_MIDDLE, PANE_LOCAL, PANE_MERGED, {
+			diffs: STANDARD_DIFFS,
+			paneLineCounts: PANE_COUNTS,
+			smooth: true,
+			diffIsReversed: [false, true, false, true],
+		});
 		expect(result).toBeCloseTo(TARGET_LINE_EXPECTED_50, 0);
 	});
 
@@ -121,15 +109,12 @@ describe("5-Pane Scroll Mapping Advanced Tests", () => {
 			LINE_COUNT_STANDARD,
 			LINE_COUNT_STANDARD,
 		];
-		const res = mapLineAcrossPanes(
-			SOURCE_LINE_COMPLEX,
-			PANE_LOCAL,
-			PANE_REMOTE,
-			complexDiffs,
-			counts,
-			true,
-			[false, true, false, false],
-		);
+		const res = mapLineAcrossPanes(SOURCE_LINE_COMPLEX, PANE_LOCAL, PANE_REMOTE, {
+			diffs: complexDiffs,
+			paneLineCounts: counts,
+			smooth: true,
+			diffIsReversed: [false, true, false, false],
+		});
 		expect(res).toBeCloseTo(TARGET_LINE_EXPECTED_55, 0);
 	});
 });

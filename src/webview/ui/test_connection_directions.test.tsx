@@ -144,15 +144,12 @@ describe("Connection Directions and Bounds Checking", () => {
 	describe("mapLineAcrossPanes Verification", () => {
 		it("should work correctly with correct reversal flags (already fixed in scrollMapping)", () => {
 			const diffIsReversed = [false, true, false, false];
-			const result = mapLineAcrossPanes(
-				190, // last line of Remote
-				3, // Remote
-				4, // BaseR
+			const result = mapLineAcrossPanes(190, 3, 4, {
 				diffs,
 				paneLineCounts,
-				true,
+				smooth: true,
 				diffIsReversed,
-			);
+			});
 			expect(result).toBeLessThanOrEqual(388);
 			expect(result).toBeGreaterThan(200);
 		});

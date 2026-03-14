@@ -260,45 +260,33 @@ describe("mapLineAcrossPanes", () => {
 		const eIn = 1e-8;
 		const eOut = 1e-6;
 		for (let x = 0; x < 20; x++) {
-			const val = mapLineAcrossPanes(
-				Math.max(0, x - eIn),
-				0,
-				2,
+			const val = mapLineAcrossPanes(Math.max(0, x - eIn), 0, 2, {
 				diffs,
-				counts,
-				true,
-				[false, false],
-			);
-			const valNext = mapLineAcrossPanes(
-				x + eIn,
-				0,
-				2,
+				paneLineCounts: counts,
+				smooth: true,
+				diffIsReversed: [false, false],
+			});
+			const valNext = mapLineAcrossPanes(x + eIn, 0, 2, {
 				diffs,
-				counts,
-				true,
-				[false, false],
-			);
+				paneLineCounts: counts,
+				smooth: true,
+				diffIsReversed: [false, false],
+			});
 			expect(Math.abs(valNext - val)).toBeLessThan(eOut);
 		}
 		for (let x = 0; x < 30; x++) {
-			const val = mapLineAcrossPanes(
-				Math.max(0, x - eIn),
-				2,
-				0,
+			const val = mapLineAcrossPanes(Math.max(0, x - eIn), 2, 0, {
 				diffs,
-				counts,
-				true,
-				[false, false],
-			);
-			const valNext = mapLineAcrossPanes(
-				x + eIn,
-				2,
-				0,
+				paneLineCounts: counts,
+				smooth: true,
+				diffIsReversed: [false, false],
+			});
+			const valNext = mapLineAcrossPanes(x + eIn, 2, 0, {
 				diffs,
-				counts,
-				true,
-				[false, false],
-			);
+				paneLineCounts: counts,
+				smooth: true,
+				diffIsReversed: [false, false],
+			});
 			expect(Math.abs(valNext - val)).toBeLessThan(eOut);
 		}
 	});
@@ -310,10 +298,12 @@ describe("mapLineAcrossPanes", () => {
 		];
 
 		// Just verify it doesn't throw and produces a finite value
-		const result = mapLineAcrossPanes(5, 0, 2, diffs, [20, 30, 30], true, [
-			false,
-			false,
-		]);
+		const result = mapLineAcrossPanes(5, 0, 2, {
+			diffs,
+			paneLineCounts: [20, 30, 30],
+			smooth: true,
+			diffIsReversed: [false, false],
+		});
 		expect(Number.isFinite(result)).toBe(true);
 		expect(result).toBeGreaterThanOrEqual(0);
 	});
@@ -366,30 +356,23 @@ describe("complex multi-pane scenarios", () => {
 					throw new Error("Missing count in test");
 				}
 
-				// Instead of enforcing that 0 maps to 0 exactly, we enforce that mapping the extremes
 				// matches the manually tracked exact bounds based on consecutive differences at the edges
 				// However, if we simply clamp, a large negative shift might make 0 map to 0.
 				// Let's just verify that it doesn't throw and that the map matches the known boundaries of the complex setup.
-				const topRes = mapLineAcrossPanes(
-					0,
-					sIdx,
-					tIdx,
-					complexDiffs,
-					complexCounts,
-					true,
-					[false, false, false, false],
-				);
+				const topRes = mapLineAcrossPanes(0, sIdx, tIdx, {
+					diffs: complexDiffs,
+					paneLineCounts: complexCounts,
+					smooth: true,
+					diffIsReversed: [false, false, false, false],
+				});
 				expect(topRes).toBeGreaterThanOrEqual(0);
 
-				const botRes = mapLineAcrossPanes(
-					sMax,
-					sIdx,
-					tIdx,
-					complexDiffs,
-					complexCounts,
-					true,
-					[false, false, false, false],
-				);
+				const botRes = mapLineAcrossPanes(sMax, sIdx, tIdx, {
+					diffs: complexDiffs,
+					paneLineCounts: complexCounts,
+					smooth: true,
+					diffIsReversed: [false, false, false, false],
+				});
 				expect(botRes).toBeLessThanOrEqual(tMax);
 			}
 		}
@@ -400,24 +383,18 @@ describe("complex multi-pane scenarios", () => {
 		// Verify continuity through it: small input delta -> small output delta
 		const Eps = 1e-6;
 		for (let x = 13; x <= 22; x += 0.5) {
-			const val = mapLineAcrossPanes(
-				x,
-				0,
-				1,
-				complexDiffs,
-				complexCounts,
-				true,
-				[false, false, false, false],
-			);
-			const valNext = mapLineAcrossPanes(
-				x + Eps,
-				0,
-				1,
-				complexDiffs,
-				complexCounts,
-				true,
-				[false, false, false, false],
-			);
+			const val = mapLineAcrossPanes(x, 0, 1, {
+				diffs: complexDiffs,
+				paneLineCounts: complexCounts,
+				smooth: true,
+				diffIsReversed: [false, false, false, false],
+			});
+			const valNext = mapLineAcrossPanes(x + Eps, 0, 1, {
+				diffs: complexDiffs,
+				paneLineCounts: complexCounts,
+				smooth: true,
+				diffIsReversed: [false, false, false, false],
+			});
 			expect(Math.abs(valNext - val)).toBeLessThan(1.0);
 		}
 	});
@@ -427,24 +404,18 @@ describe("complex multi-pane scenarios", () => {
 		// Verify continuity through it: small input delta -> small output delta
 		const Eps = 1e-6;
 		for (let x = 3; x <= 8; x += 0.25) {
-			const val = mapLineAcrossPanes(
-				x,
-				0,
-				1,
-				complexDiffs,
-				complexCounts,
-				true,
-				[false, false, false, false],
-			);
-			const valNext = mapLineAcrossPanes(
-				x + Eps,
-				0,
-				1,
-				complexDiffs,
-				complexCounts,
-				true,
-				[false, false, false, false],
-			);
+			const val = mapLineAcrossPanes(x, 0, 1, {
+				diffs: complexDiffs,
+				paneLineCounts: complexCounts,
+				smooth: true,
+				diffIsReversed: [false, false, false, false],
+			});
+			const valNext = mapLineAcrossPanes(x + Eps, 0, 1, {
+				diffs: complexDiffs,
+				paneLineCounts: complexCounts,
+				smooth: true,
+				diffIsReversed: [false, false, false, false],
+			});
 			expect(Math.abs(valNext - val)).toBeLessThan(1.0);
 		}
 	});
@@ -496,41 +467,32 @@ describe("complex multi-pane scenarios", () => {
 				}
 
 				for (const bound of sortedBoundaries) {
-					const valAtBoundary = mapLineAcrossPanes(
-						bound,
-						sIdx,
-						tIdx,
-						complexDiffs,
-						complexCounts,
-						true,
-						[false, false, false, false],
-					);
+					const valAtBoundary = mapLineAcrossPanes(bound, sIdx, tIdx, {
+						diffs: complexDiffs,
+						paneLineCounts: complexCounts,
+						smooth: true,
+						diffIsReversed: [false, false, false, false],
+					});
 
 					if (bound - Epsilon >= 0) {
-						const valBefore = mapLineAcrossPanes(
-							bound - Epsilon,
-							sIdx,
-							tIdx,
-							complexDiffs,
-							complexCounts,
-							true,
-							[false, false, false, false],
+						const valBefore = mapLineAcrossPanes(bound - Epsilon, sIdx, tIdx, {
+							diffs: complexDiffs,
+							paneLineCounts: complexCounts,
+							smooth: true,
+							diffIsReversed: [false, false, false, false],
+						});
+						expect(Math.abs(valAtBoundary - valBefore)).toBeLessThan(
+							MaxDelta,
 						);
-						expect(
-							Math.abs(valAtBoundary - valBefore),
-						).toBeLessThan(MaxDelta);
 					}
 
 					if (bound + Epsilon <= sMax) {
-						const valAfter = mapLineAcrossPanes(
-							bound + Epsilon,
-							sIdx,
-							tIdx,
-							complexDiffs,
-							complexCounts,
-							true,
-							[false, false, false, false],
-						);
+						const valAfter = mapLineAcrossPanes(bound + Epsilon, sIdx, tIdx, {
+							diffs: complexDiffs,
+							paneLineCounts: complexCounts,
+							smooth: true,
+							diffIsReversed: [false, false, false, false],
+						});
 						expect(Math.abs(valAfter - valAtBoundary)).toBeLessThan(
 							MaxDelta,
 						);
@@ -606,15 +568,12 @@ describe("complex multi-pane scenarios", () => {
 		const sourceLine = 183.439_754_207_854_66;
 
 		expect(() => {
-			mapLineAcrossPanes(
-				sourceLine,
-				3, // sourceIdx (Remote)
-				4, // targetIdx (BaseR)
+			mapLineAcrossPanes(sourceLine, 3, 4, {
 				diffs,
 				paneLineCounts,
-				true, // smooth
+				smooth: true,
 				diffIsReversed,
-			);
+			});
 		}).not.toThrow();
 	});
 });
