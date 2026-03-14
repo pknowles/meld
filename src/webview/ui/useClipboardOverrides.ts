@@ -50,47 +50,42 @@ export function useClipboardOverrides(
 	);
 
 	React.useEffect(() => {
-		const handleClipboard = (e: ClipboardEvent) => {
-			const activeEditor = editorRefs.current.find((ed) =>
-				ed?.hasWidgetFocus(),
-			);
-			if (!activeEditor) {
-				return;
+		const handlePaste = (e: ClipboardEvent, activeEditor: editor.IStandaloneCodeEditor) => {
+			if (!activeEditor.getOption(editor.EditorOption.readOnly)) {
+				e.preventDefault();
+				requestClipboardText().then((text) => {
+					activeEditor.trigger("keyboard", "paste", { text });
+				});
 			}
+		};
 
-			if (e.type === "paste") {
-				if (!activeEditor.getOption(editor.EditorOption.readOnly)) {
-					e.preventDefault();
-					requestClipboardText().then((text) => {
-						activeEditor.trigger("keyboard", "paste", { text });
-					});
-				}
-				return;
-			}
-
-			// Copy or Cut
-			const selection = activeEditor.getSelection();
-			if (!selection) {
-				return;
-			}
-
-			const model = activeEditor.getModel();
-			if (!model) {
-				return;
+		const getSelectionText = (editor: editor.IStandaloneCodeEditor) => {
+			const selection = editor.getSelection();
+			const model = editor.getModel();
+			if (!selection || !model) {
+				return null;
 			}
 
 			let text = "";
 			let rangeToDelete = selection;
 
 			if (selection.isEmpty()) {
-				// Empty selection: copy/cut the whole line (matching native behavior)
 				const line = selection.startLineNumber;
 				text = `${model.getLineContent(line)}\n`;
 				rangeToDelete = new Selection(line, 1, line + 1, 1);
 			} else {
 				text = model.getValueInRange(selection);
 			}
+			return { text, rangeToDelete };
+		};
 
+		const handleCopyCut = (e: ClipboardEvent, activeEditor: editor.IStandaloneCodeEditor) => {
+			const result = getSelectionText(activeEditor);
+			if (!result) {
+				return;
+			}
+
+			const { text, rangeToDelete } = result;
 			if (text) {
 				e.preventDefault();
 				writeClipboardText(text);
@@ -102,6 +97,21 @@ export function useClipboardOverrides(
 						{ range: rangeToDelete, text: "" },
 					]);
 				}
+			}
+		};
+
+		const handleClipboard = (e: ClipboardEvent) => {
+			const activeEditor = editorRefs.current.find((ed) =>
+				ed?.hasWidgetFocus(),
+			);
+			if (!activeEditor) {
+				return;
+			}
+
+			if (e.type === "paste") {
+				handlePaste(e, activeEditor);
+			} else if (e.type === "copy" || e.type === "cut") {
+				handleCopyCut(e, activeEditor);
 			}
 		};
 

@@ -64,7 +64,9 @@ describe("Connection Directions and Bounds Checking", () => {
 			{ tag: "insert", startA: 190, endA: 190, startB: 205, endB: 387 },
 		],
 	];
-	const paneLineCounts = [1, 386, 388, 191, 388];
+	const paneLineCounts: [number, number, number, number, number] = [
+		1, 386, 388, 191, 388,
+	];
 
 	describe("getBounds Unit Test", () => {
 		it("should NOT throw when mapping lines with correct reversal (false)", () => {

@@ -2,15 +2,15 @@
 
 import type { DiffChunk } from "./types.ts";
 
-interface MappingOptions {
-	chunks: DiffChunk[];
+export interface MappingOptions {
+	chunks: DiffChunk[] | null | undefined;
 	sourceMaxLines: number;
 	targetMaxLines: number;
 	sourceIsA: boolean;
 	smooth: boolean;
 }
 
-interface PaneMappingContext {
+export interface PaneMappingContext {
 	diffs: (DiffChunk[] | null)[];
 	paneLineCounts: [number, number, number, number, number];
 	smooth: boolean;
@@ -18,11 +18,11 @@ interface PaneMappingContext {
 }
 
 function _sOf(chunk: DiffChunk, sourceIsA: boolean): [number, number] {
-	return sourceIsA ? [chunk.s1, chunk.s2] : [chunk.t1, chunk.t2];
+	return sourceIsA ? [chunk.startA, chunk.endA] : [chunk.startB, chunk.endB];
 }
 
 function _tOf(chunk: DiffChunk, sourceIsA: boolean): [number, number] {
-	return sourceIsA ? [chunk.t1, chunk.t2] : [chunk.s1, chunk.s2];
+	return sourceIsA ? [chunk.startB, chunk.endB] : [chunk.startA, chunk.endA];
 }
 
 function _chunkSrcMid(chunk: DiffChunk, sourceIsA: boolean): number {
@@ -43,12 +43,27 @@ function _implicitDstMid(gap: [number, number, number, number]): number {
 	return (gap[2] + gap[3]) / 2;
 }
 
-function _upperBound(chunks: DiffChunk[], line: number, sourceIsA: boolean): number {
+function _interpolate(
+	src: number,
+	s1: number,
+	s2: number,
+	t1: number,
+	t2: number,
+): number {
+	const ratio = s2 - s1 > 0 ? (src - s1) / (s2 - s1) : 0;
+	return t1 + ratio * (t2 - t1);
+}
+
+function _upperBoundMid(
+	chunks: DiffChunk[],
+	line: number,
+	sourceIsA: boolean,
+): number {
 	let low = 0;
 	let high = chunks.length;
 	while (low < high) {
 		const mid = (low + high) >>> 1;
-		if (_sOf(chunks[mid], sourceIsA)[0] <= line) {
+		if (_chunkSrcMid(chunks[mid]!, sourceIsA) <= line) {
 			low = mid + 1;
 		} else {
 			high = mid;
@@ -62,18 +77,17 @@ function _getPreviousImplicitChunk(
 	chunks: DiffChunk[],
 	sourceIsA: boolean,
 ): [number, number, number, number] {
+	const cur = chunks[idx]!;
+	const [sCurStart] = _sOf(cur, sourceIsA);
+	const [tCurStart] = _tOf(cur, sourceIsA);
+
 	if (idx === 0) {
-		return [0, 0, 0, 0];
+		return [0, sCurStart, 0, tCurStart];
 	}
 
-	const cur = chunks[idx];
-	const prev = chunks[idx - 1];
+	const prev = chunks[idx - 1]!;
 	const [sPrevStart, sPrevEnd] = _sOf(prev, sourceIsA);
 	const [tPrevStart, tPrevEnd] = _tOf(prev, sourceIsA);
-	const [sCurStart, _sCurEnd] = _sOf(cur, sourceIsA);
-	const [_tCurStart, _tCurEnd] = _tOf(cur, sourceIsA);
-
-	const tCurStart = _tOf(cur, sourceIsA)[0];
 
 	if (sCurStart > sPrevEnd) {
 		return [sPrevEnd, sCurStart, tPrevEnd, tCurStart];
@@ -82,147 +96,202 @@ function _getPreviousImplicitChunk(
 	return [sPrevStart, sPrevEnd, tPrevStart, tPrevEnd];
 }
 
-function _getEdgeGap(
-	upperBoundChunkIdx: number,
-	opts: MappingOptions,
+function _getNextImplicitChunk(
+	idx: number,
+	chunks: DiffChunk[],
+	sourceMaxLines: number,
+	targetMaxLines: number,
+	sourceIsA: boolean,
 ): [number, number, number, number] {
-	const { chunks, sourceMaxLines, targetMaxLines, sourceIsA } = opts;
+	const cur = chunks[idx]!;
+	const [, sCurEnd] = _sOf(cur, sourceIsA);
+	const [, tCurEnd] = _tOf(cur, sourceIsA);
 
-	if (upperBoundChunkIdx === 0) {
-		const first = chunks[0];
-		if (first && _sOf(first, sourceIsA)[0] > 0) {
-			return [0, _sOf(first, sourceIsA)[0], 0, _tOf(first, sourceIsA)[0]];
-		}
-		return [0, 0, 0, 0];
+	if (idx === chunks.length - 1) {
+		return [sCurEnd, sourceMaxLines, tCurEnd, targetMaxLines];
 	}
 
-	const last = chunks[chunks.length - 1];
-	const [sPrevEnd] = _sOf(last, sourceIsA).slice(1);
-	const [tPrevEnd] = _tOf(last, sourceIsA).slice(1);
+	const next = chunks[idx + 1]!;
+	const [sNextStart, sNextEnd] = _sOf(next, sourceIsA);
+	const [tNextStart, tNextEnd] = _tOf(next, sourceIsA);
 
-	const gap: [number, number, number, number] = [
-		sPrevEnd,
-		sourceMaxLines,
-		tPrevEnd,
-		targetMaxLines,
-	];
+	if (sNextStart > sCurEnd) {
+		return [sCurEnd, sNextStart, tCurEnd, tNextStart];
+	}
 
-	return [
-		_implicitSrcMid(gap),
-		sourceMaxLines,
-		_implicitDstMid(gap),
-		targetMaxLines,
-	];
+	return [sNextStart, sNextEnd, tNextStart, tNextEnd];
 }
 
 function _getGeneralInterpolationRanges(
 	line: number,
-	upperBoundChunkIdx: number,
+	idx: number,
 	opts: MappingOptions,
 ): [number, number, number, number] {
-	const { chunks, sourceIsA } = opts;
-	const curUpper = chunks[upperBoundChunkIdx];
-	if (!curUpper) {
-		throw new Error(`Upperbound chunk at index ${upperBoundChunkIdx} not found`);
-	}
+	const { chunks, sourceMaxLines, targetMaxLines, sourceIsA } = opts;
+	const cur = chunks![idx]!;
+	const [sStart] = _sOf(cur, sourceIsA);
 
-	if (line < _sOf(curUpper, sourceIsA)[0]) {
-		const chunk = _getPreviousImplicitChunk(upperBoundChunkIdx, chunks, sourceIsA);
-		if (line < _implicitSrcMid(chunk)) {
-			const prevChunk = upperBoundChunkIdx > 0 ? chunks[upperBoundChunkIdx - 1] : undefined;
+	if (line < sStart) {
+		const gap = _getPreviousImplicitChunk(idx, chunks!, sourceIsA);
+		if (line < _implicitSrcMid(gap)) {
+			const prev = idx > 0 ? chunks![idx - 1] : undefined;
 			return [
-				prevChunk ? _chunkSrcMid(prevChunk, sourceIsA) : 0,
-				_implicitSrcMid(chunk),
-				prevChunk ? _chunkDstMid(prevChunk, sourceIsA) : 0,
-				_implicitDstMid(chunk),
+				prev ? _chunkSrcMid(prev, sourceIsA) : 0,
+				_implicitSrcMid(gap),
+				prev ? _chunkDstMid(prev, sourceIsA) : 0,
+				_implicitDstMid(gap),
 			];
 		}
 		return [
-			_implicitSrcMid(chunk),
-			_chunkSrcMid(curUpper, sourceIsA),
-			_implicitDstMid(chunk),
-			_chunkDstMid(curUpper, sourceIsA),
+			_implicitSrcMid(gap),
+			_chunkSrcMid(cur, sourceIsA),
+			_implicitDstMid(gap),
+			_chunkDstMid(cur, sourceIsA),
 		];
 	}
 
-	const nextIdx = upperBoundChunkIdx + 1;
-	const nextGap = nextIdx < chunks.length ? _getPreviousImplicitChunk(nextIdx, chunks, sourceIsA) : undefined;
-
-	if (nextGap && line < _implicitSrcMid(nextGap)) {
+	if (line < _chunkSrcMid(cur, sourceIsA)) {
+		const gap = _getPreviousImplicitChunk(idx, chunks!, sourceIsA);
 		return [
-			_chunkSrcMid(curUpper, sourceIsA),
-			_implicitSrcMid(nextGap),
-			_chunkDstMid(curUpper, sourceIsA),
-			_implicitDstMid(nextGap),
+			_implicitSrcMid(gap),
+			_chunkSrcMid(cur, sourceIsA),
+			_implicitDstMid(gap),
+			_chunkDstMid(cur, sourceIsA),
 		];
 	}
 
-	const edgeGap = _getEdgeGap(chunks.length, opts);
+	const nextGap = _getNextImplicitChunk(
+		idx,
+		chunks!,
+		sourceMaxLines,
+		targetMaxLines,
+		sourceIsA,
+	);
 	return [
-		_chunkSrcMid(curUpper, sourceIsA),
-		_implicitSrcMid(edgeGap),
-		_chunkDstMid(curUpper, sourceIsA),
-		_implicitDstMid(edgeGap),
+		_chunkSrcMid(cur, sourceIsA),
+		_implicitSrcMid(nextGap),
+		_chunkDstMid(cur, sourceIsA),
+		_implicitDstMid(nextGap),
 	];
 }
 
 function _mapLineDiscrete(line: number, opts: MappingOptions): number {
 	const { chunks, sourceIsA } = opts;
-	const idx = _upperBound(chunks, line, sourceIsA);
-	if (idx > 0) {
-		const chunk = chunks[idx - 1];
-		const [s1, s2] = _sOf(chunk, sourceIsA);
-		const [t1, t2] = _tOf(chunk, sourceIsA);
-		if (line < s2) {
-			const ratio = (s2 - s1 > 0) ? (line - s1) / (s2 - s1) : 0;
-			return t1 + ratio * (t2 - t1);
+	let low = 0;
+	let high = chunks!.length;
+	while (low < high) {
+		const mid = (low + high) >>> 1;
+		if (_sOf(chunks![mid]!, sourceIsA)[0] <= line) {
+			low = mid + 1;
+		} else {
+			high = mid;
 		}
 	}
+	const idx = low;
+
+	if (idx > 0) {
+		const prev = chunks![idx - 1]!;
+		const [, s2] = _sOf(prev, sourceIsA);
+		if (line < s2) {
+			const [s1] = _sOf(prev, sourceIsA);
+			const [t1, t2] = _tOf(prev, sourceIsA);
+			return _interpolate(line, s1, s2, t1, t2);
+		}
+	}
+
+	if (idx < chunks!.length) {
+		const gap = _getPreviousImplicitChunk(idx, chunks!, sourceIsA);
+		return line + (gap[2] - gap[0]);
+	}
+
+	const last = chunks!.at(-1);
+	if (last) {
+		const [, sEnd] = _sOf(last, sourceIsA);
+		const [, tEnd] = _tOf(last, sourceIsA);
+		return line + (tEnd - sEnd);
+	}
+
 	return line;
 }
 
-function _mapLineSmooth(
-	line: number,
-	opts: MappingOptions,
-	targetClamp: (val: number) => number,
-): number {
-	const { chunks, targetMaxLines, sourceIsA } = opts;
-	const idx = _upperBound(chunks, line, sourceIsA);
+function _mapLineSmooth(line: number, opts: MappingOptions): number {
+	const { chunks, sourceMaxLines, targetMaxLines, sourceIsA } = opts;
+	const idx = _upperBoundMid(chunks!, line, sourceIsA);
 
-	let src1: number;
-	let src2: number;
-	let dst1: number;
-	let dst2: number;
+	let s1: number;
+	let s2: number;
+	let t1: number;
+	let t2: number;
 
-	if (idx === 0 || idx === chunks.length) {
-		const gap = _getEdgeGap(idx, opts);
-		[src1, src2, dst1, dst2] = gap;
+	if (idx === chunks!.length) {
+		const last = chunks!.at(-1)!;
+		const gap = _getNextImplicitChunk(
+			chunks!.length - 1,
+			chunks!,
+			sourceMaxLines,
+			targetMaxLines,
+			sourceIsA,
+		);
+		if (line < _implicitSrcMid(gap)) {
+			[s1, s2, t1, t2] = [
+				_chunkSrcMid(last, sourceIsA),
+				_implicitSrcMid(gap),
+				_chunkDstMid(last, sourceIsA),
+				_implicitDstMid(gap),
+			];
+		} else {
+			[s1, s2, t1, t2] = [
+				_implicitSrcMid(gap),
+				sourceMaxLines,
+				_implicitDstMid(gap),
+				targetMaxLines,
+			];
+		}
 	} else {
-		[src1, src2, dst1, dst2] = _getGeneralInterpolationRanges(line, idx, opts);
+		[s1, s2, t1, t2] = _getGeneralInterpolationRanges(line, idx, opts);
 	}
 
-	const ratio = (src2 - src1 > 0) ? (line - src1) / (src2 - src1) : 0;
-	return targetClamp(dst1 + ratio * (dst2 - dst1));
+	let result = _interpolate(line, s1, s2, t1, t2);
+	if (result >= targetMaxLines) {
+		result = targetMaxLines - 1e-8;
+	}
+	return result;
 }
 
 /**
  * Maps a continuous line number from one side of a chunk array to the other.
  */
-function mapLineAcrossChunks(line: number, opts: MappingOptions): number {
-	const { sourceMaxLines, smooth } = opts;
+export function mapLineAcrossChunks(
+	line: number,
+	opts: MappingOptions,
+): number {
+	const { chunks, sourceMaxLines, targetMaxLines, smooth } = opts;
 	const clampedLine = Math.max(0, Math.min(line, sourceMaxLines - 1e-10));
-	const targetClamp = (val: number) => Math.max(0, Math.min(val, opts.targetMaxLines - 1e-10));
+	const targetClamp = (val: number) =>
+		Math.max(0, Math.min(val, targetMaxLines));
+
+	if (!chunks || chunks.length === 0) {
+		return targetClamp(clampedLine);
+	}
+
+	const last = chunks.at(-1);
+	if (last) {
+		const [, sEnd] = _sOf(last, opts.sourceIsA);
+		if (sEnd > sourceMaxLines) {
+			throw new Error("last chunk outside _sourceMaxLines");
+		}
+	}
 
 	if (smooth) {
-		return _mapLineSmooth(clampedLine, opts, targetClamp);
+		return targetClamp(_mapLineSmooth(clampedLine, opts));
 	}
-	return _mapLineDiscrete(clampedLine, opts);
+	return targetClamp(_mapLineDiscrete(clampedLine, opts));
 }
 
 /**
  * Maps a continuous line number across n panes (0 to n-1).
  */
-function mapLineAcrossPanes(
+export function mapLineAcrossPanes(
 	sourceLine: number,
 	sourceIdx: number,
 	targetIdx: number,
@@ -242,18 +311,16 @@ function mapLineAcrossPanes(
 		return mapLineAcrossPanes(sourceLine, nextIdx, targetIdx, ctx);
 	}
 
-	const sourceIsA = (step === 1) ? !diffIsReversed[diffIdx] : diffIsReversed[diffIdx];
+	const sourceIsA =
+		step === 1 ? !diffIsReversed[diffIdx] : !!diffIsReversed[diffIdx];
 
 	const targetLine = mapLineAcrossChunks(sourceLine, {
 		chunks,
-		sourceMaxLines: paneLineCounts[sourceIdx],
-		targetMaxLines: paneLineCounts[nextIdx],
+		sourceMaxLines: paneLineCounts[sourceIdx]!,
+		targetMaxLines: paneLineCounts[nextIdx]!,
 		sourceIsA,
 		smooth,
 	});
 
 	return mapLineAcrossPanes(targetLine, nextIdx, targetIdx, ctx);
 }
-
-export type { MappingOptions, PaneMappingContext };
-export { mapLineAcrossChunks, mapLineAcrossPanes };

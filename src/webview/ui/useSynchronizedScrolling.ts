@@ -16,18 +16,28 @@ interface SyncOptions {
 	smoothScrolling: boolean;
 }
 
-function getSyncPointY(scrollTop: number, pageSize: number, scrollHeight: number) {
+function getSyncPointY(
+	scrollTop: number,
+	pageSize: number,
+	scrollHeight: number,
+) {
 	const halfPage = pageSize / 2;
 	let syncpoint = 0.0;
 	const firstScale = Math.min(1, Math.max(0, scrollTop / halfPage));
 	syncpoint += 0.5 * firstScale;
 	const bottomVal = Math.max(0, scrollHeight - 1.5 * pageSize);
-	const lastScale = Math.min(1, Math.max(0, (scrollTop - bottomVal) / halfPage));
+	const lastScale = Math.min(
+		1,
+		Math.max(0, (scrollTop - bottomVal) / halfPage),
+	);
 	syncpoint += 0.5 * lastScale;
 	return { syncpoint, syncY: scrollTop + pageSize * syncpoint };
 }
 
-function getSourceLineDecimal(sourceEd: editor.IStandaloneCodeEditor, syncY: number) {
+function getSourceLineDecimal(
+	sourceEd: editor.IStandaloneCodeEditor,
+	syncY: number,
+) {
 	const sourceModel = sourceEd.getModel();
 	const sourceLineCount = sourceModel ? sourceModel.getLineCount() : 1;
 	let intSourceLine = 1;
@@ -43,7 +53,9 @@ function getSourceLineDecimal(sourceEd: editor.IStandaloneCodeEditor, syncY: num
 			high = mid - 1;
 		}
 	}
-	const fallbackLineHeight = sourceEd.getOption(editor.EditorOption.lineHeight);
+	const fallbackLineHeight = sourceEd.getOption(
+		editor.EditorOption.lineHeight,
+	);
 	const baseSourcePx = sourceEd.getTopForLineNumber(intSourceLine);
 	const nextSourcePx =
 		intSourceLine < sourceLineCount
@@ -91,12 +103,17 @@ function syncScrollToTarget(opts: SyncOptions) {
 		return;
 	}
 
-	const targetLineDecimal = mapLineAcrossPanes(sourceLineDecimal, sourceIndex, targetIdx, {
-		diffs,
-		paneLineCounts: paneCounts,
-		smooth: smoothScrolling,
-		diffIsReversed: diffsAreReversed,
-	});
+	const targetLineDecimal = mapLineAcrossPanes(
+		sourceLineDecimal,
+		sourceIndex,
+		targetIdx,
+		{
+			diffs,
+			paneLineCounts: paneCounts,
+			smooth: smoothScrolling,
+			diffIsReversed: diffsAreReversed,
+		},
+	);
 
 	const intTargetLine = Math.floor(targetLineDecimal) + 1;
 	const targetFraction = targetLineDecimal - Math.floor(targetLineDecimal);
@@ -105,18 +122,71 @@ function syncScrollToTarget(opts: SyncOptions) {
 	let targetSyncY: number;
 	if (intTargetLine >= targetMax) {
 		const lastTop = otherEditor.getTopForLineNumber(targetMax);
-		const targetHeight = otherEditor.getOption(editor.EditorOption.lineHeight);
+		const targetHeight = otherEditor.getOption(
+			editor.EditorOption.lineHeight,
+		);
 		targetSyncY = lastTop + targetFraction * targetHeight;
 	} else {
 		const targetBasePx = otherEditor.getTopForLineNumber(intTargetLine);
 		const targetNextPx = otherEditor.getTopForLineNumber(intTargetLine + 1);
-		targetSyncY = targetBasePx + targetFraction * (targetNextPx - targetBasePx);
+		targetSyncY =
+			targetBasePx + targetFraction * (targetNextPx - targetBasePx);
 	}
 
 	const layoutInfo = otherEditor.getLayoutInfo();
 	const targetScrollTop = targetSyncY - layoutInfo.height * syncpoint;
 	if (Math.abs(otherEditor.getScrollTop() - targetScrollTop) > 2) {
 		otherEditor.setScrollTop(targetScrollTop);
+	}
+}
+
+const getPaneCounts = (
+	editorRefs: React.MutableRefObject<editor.IStandaloneCodeEditor[]>,
+): [number, number, number, number, number] => {
+	return [
+		editorRefs.current[0]?.getModel()?.getLineCount() ?? 1,
+		editorRefs.current[1]?.getModel()?.getLineCount() ?? 1,
+		editorRefs.current[2]?.getModel()?.getLineCount() ?? 1,
+		editorRefs.current[3]?.getModel()?.getLineCount() ?? 1,
+		editorRefs.current[4]?.getModel()?.getLineCount() ?? 1,
+	];
+};
+
+function syncVerticalScroll(
+	sourceEd: editor.IStandaloneCodeEditor,
+	sourceIndex: number,
+	scrollTop: number,
+	paneCounts: [number, number, number, number, number],
+	editorRefs: React.MutableRefObject<editor.IStandaloneCodeEditor[]>,
+	diffsRef: React.MutableRefObject<(DiffChunk[] | null)[]>,
+	diffsAreReversedRef: React.MutableRefObject<boolean[]>,
+	smoothScrolling: boolean,
+	targetIndices?: number[],
+) {
+	const { height } = sourceEd.getLayoutInfo();
+	const { syncpoint, syncY } = getSyncPointY(
+		scrollTop,
+		height,
+		sourceEd.getContentHeight(),
+	);
+	const sourceLineDec = getSourceLineDecimal(sourceEd, syncY);
+
+	for (let tIdx = 0; tIdx < editorRefs.current.length; tIdx++) {
+		const ed = editorRefs.current[tIdx];
+		if (ed) {
+			syncScrollToTarget({
+				otherEditor: ed,
+				targetIdx: tIdx,
+				sourceIndex,
+				sourceLineDecimal: sourceLineDec,
+				paneCounts,
+				syncpoint,
+				targetIndices: targetIndices ?? undefined,
+				diffs: diffsRef.current,
+				diffsAreReversed: diffsAreReversedRef.current,
+				smoothScrolling,
+			});
+		}
 	}
 }
 
@@ -144,36 +214,26 @@ const useSynchronizedScrolling = (
 			scrollLockRef.current = true;
 			try {
 				if (scrollTop !== undefined) {
-					const { height } = sourceEd.getLayoutInfo();
-					const { syncpoint, syncY } = getSyncPointY(scrollTop, height, sourceEd.getContentHeight());
-					const sourceLineDec = getSourceLineDecimal(sourceEd, syncY);
-					const paneCounts: [number, number, number, number, number] = [
-						editorRefs.current[0]?.getModel()?.getLineCount() ?? 1,
-						editorRefs.current[1]?.getModel()?.getLineCount() ?? 1,
-						editorRefs.current[2]?.getModel()?.getLineCount() ?? 1,
-						editorRefs.current[3]?.getModel()?.getLineCount() ?? 1,
-						editorRefs.current[4]?.getModel()?.getLineCount() ?? 1,
-					];
-					for (let tIdx = 0; tIdx < editorRefs.current.length; tIdx++) {
-						const ed = editorRefs.current[tIdx];
-						if (ed) {
-							syncScrollToTarget({
-								otherEditor: ed,
-								targetIdx: tIdx,
-								sourceIndex,
-								sourceLineDecimal: sourceLineDec,
-								paneCounts,
-								syncpoint,
-								targetIndices: targetIndices ?? undefined,
-								diffs: diffsRef.current,
-								diffsAreReversed: diffsAreReversedRef.current,
-								smoothScrolling,
-							});
-						}
-					}
+					const paneCounts = getPaneCounts(editorRefs);
+					syncVerticalScroll(
+						sourceEd,
+						sourceIndex,
+						scrollTop,
+						paneCounts,
+						editorRefs,
+						diffsRef,
+						diffsAreReversedRef,
+						smoothScrolling,
+						targetIndices,
+					);
 				}
 				if (scrollLeft !== undefined) {
-					syncHorizontalScroll(editorRefs, sourceIndex, scrollLeft, targetIndices);
+					syncHorizontalScroll(
+						editorRefs,
+						sourceIndex,
+						scrollLeft,
+						targetIndices,
+					);
 				}
 			} finally {
 				if (requestFrameRef.current !== null) {
@@ -189,8 +249,8 @@ const useSynchronizedScrolling = (
 	);
 
 	const attachScrollListener = React.useCallback(
-		(ed: editor.IStandaloneCodeEditor, edIndex: number) => {
-			return ed.onDidScrollChange((e) => {
+		(ed: editor.IStandaloneCodeEditor, edIndex: number) =>
+			ed.onDidScrollChange((e) => {
 				if (scrollLockRef.current) {
 					return;
 				}
@@ -203,8 +263,7 @@ const useSynchronizedScrolling = (
 						e.scrollLeftChanged ? e.scrollLeft : ed.getScrollLeft(),
 					);
 				}
-			});
-		},
+			}),
 		[setRenderTrigger, syncEditors],
 	);
 
@@ -212,9 +271,13 @@ const useSynchronizedScrolling = (
 		(sourceIndex: number, targetIndex: number) => {
 			const sourceEd = editorRefs.current[sourceIndex];
 			if (sourceEd && editorRefs.current[targetIndex]) {
-				syncEditors(sourceEd, sourceIndex, sourceEd.getScrollTop(), sourceEd.getScrollLeft(), [
-					targetIndex,
-				]);
+				syncEditors(
+					sourceEd,
+					sourceIndex,
+					sourceEd.getScrollTop(),
+					sourceEd.getScrollLeft(),
+					[targetIndex],
+				);
 			}
 		},
 		[editorRefs, syncEditors],

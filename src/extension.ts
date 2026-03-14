@@ -106,7 +106,9 @@ function handleOpenMeldDiff(file?: GitFile) {
 		documentUri = file.uri;
 	} else {
 		const editor = window.activeTextEditor;
-		if (!editor?.document || editor.document.isUntitled) return;
+		if (!editor?.document || editor.document.isUntitled) {
+			return;
+		}
 		documentUri = editor.document.uri;
 	}
 	commands.executeCommand(
@@ -142,7 +144,9 @@ async function handleAutoMerge(
 
 	const workspaceFolder = workspace.getWorkspaceFolder(documentUri);
 	if (!workspaceFolder) {
-		window.showErrorMessage("File must be in a workspace to use git commands.");
+		window.showErrorMessage(
+			"File must be in a workspace to use git commands.",
+		);
 		return;
 	}
 
@@ -202,7 +206,9 @@ async function handleAutoMerge(
 			window.showErrorMessage("Failed to apply merged text to editor.");
 		}
 	} catch (e: unknown) {
-		window.showErrorMessage(`Meld Auto-Merge Error: ${(e as Error).message}`);
+		window.showErrorMessage(
+			`Meld Auto-Merge Error: ${(e as Error).message}`,
+		);
 	}
 }
 
@@ -210,7 +216,9 @@ async function handleAutoMergeAll(
 	conflictedFilesProvider: ConflictedFilesProvider,
 ) {
 	const files = await conflictedFilesProvider.getChildren();
-	const unmergedFiles = files.filter((f) => f.contextValue === "conflictedFile");
+	const unmergedFiles = files.filter(
+		(f) => f.contextValue === "conflictedFile",
+	);
 	if (unmergedFiles.length === 0) {
 		window.showInformationMessage("No unmerged files to auto-merge.");
 		return;
@@ -229,7 +237,10 @@ async function handleAutoMergeAll(
 			for (const file of unmergedFiles) {
 				try {
 					progress.report({ message: `Merging ${file.label}...` });
-					await commands.executeCommand("meld-auto-merge.autoMerge", file);
+					await commands.executeCommand(
+						"meld-auto-merge.autoMerge",
+						file,
+					);
 					successCount++;
 				} catch {
 					errorCount++;
@@ -252,7 +263,9 @@ async function handleCheckoutConflicted(
 		documentUri = file.uri;
 	} else {
 		const editor = window.activeTextEditor;
-		if (!editor?.document || editor.document.isUntitled) return;
+		if (!editor?.document || editor.document.isUntitled) {
+			return;
+		}
 		documentUri = editor.document.uri;
 	}
 
@@ -262,14 +275,20 @@ async function handleCheckoutConflicted(
 		{ modal: true },
 		"Yes",
 	);
-	if (confirm !== "Yes") return;
+	if (confirm !== "Yes") {
+		return;
+	}
 
 	const workspaceFolder = workspace.getWorkspaceFolder(documentUri);
-	if (!workspaceFolder) return;
+	if (!workspaceFolder) {
+		return;
+	}
 
 	const repoPath = workspaceFolder.uri.fsPath;
 	const relativeFilePath = getRelativeRepoPath(documentUri);
-	if (!relativeFilePath) return;
+	if (!relativeFilePath) {
+		return;
+	}
 
 	try {
 		await execGit(["checkout", "-m", "--", relativeFilePath], repoPath);
@@ -294,7 +313,9 @@ async function handleRerereForget(
 		documentUri = file.uri;
 	} else {
 		const editor = window.activeTextEditor;
-		if (!editor?.document || editor.document.isUntitled) return;
+		if (!editor?.document || editor.document.isUntitled) {
+			return;
+		}
 		documentUri = editor.document.uri;
 	}
 
@@ -307,11 +328,15 @@ async function handleRerereForget(
 	if (confirm !== "Yes") return;
 
 	const workspaceFolder = workspace.getWorkspaceFolder(documentUri);
-	if (!workspaceFolder) return;
+	if (!workspaceFolder) {
+		return;
+	}
 
 	const repoPath = workspaceFolder.uri.fsPath;
 	const relativeFilePath = getRelativeRepoPath(documentUri);
-	if (!relativeFilePath) return;
+	if (!relativeFilePath) {
+		return;
+	}
 
 	try {
 		await execGit(["rerere", "forget", relativeFilePath], repoPath);
@@ -320,7 +345,9 @@ async function handleRerereForget(
 		);
 		conflictedFilesProvider.refresh();
 	} catch (e: unknown) {
-		window.showErrorMessage(`Rerere forget failed: ${(e as Error).message}`);
+		window.showErrorMessage(
+			`Rerere forget failed: ${(e as Error).message}`,
+		);
 	}
 }
 
@@ -338,7 +365,9 @@ async function handleSmartAdd(
 		text = doc.getText();
 	} else {
 		const editor = window.activeTextEditor;
-		if (!editor?.document || editor.document.isUntitled) return;
+		if (!editor?.document || editor.document.isUntitled) {
+			return;
+		}
 		await editor.document.save();
 		documentUri = editor.document.uri;
 		text = editor.document.getText();
@@ -353,11 +382,15 @@ async function handleSmartAdd(
 	}
 
 	const workspaceFolder = workspace.getWorkspaceFolder(documentUri);
-	if (!workspaceFolder) return;
+	if (!workspaceFolder) {
+		return;
+	}
 
 	const repoPath = workspaceFolder.uri.fsPath;
 	const relativeFilePath = getRelativeRepoPath(documentUri);
-	if (!relativeFilePath) return;
+	if (!relativeFilePath) {
+		return;
+	}
 
 	try {
 		await execGit(["add", relativeFilePath], repoPath);
@@ -403,8 +436,9 @@ function registerCommands(
 			"meld-auto-merge.openMeldDiff",
 			(file?: GitFile) => handleOpenMeldDiff(file),
 		),
-		commands.registerCommand("meld-auto-merge.autoMerge", (file?: GitFile) =>
-			handleAutoMerge(file, conflictedFilesProvider),
+		commands.registerCommand(
+			"meld-auto-merge.autoMerge",
+			(file?: GitFile) => handleAutoMerge(file, conflictedFilesProvider),
 		),
 		commands.registerCommand("meld-auto-merge.autoMergeAll", () =>
 			handleAutoMergeAll(conflictedFilesProvider),
@@ -414,8 +448,10 @@ function registerCommands(
 			(file?: GitFile) =>
 				handleCheckoutConflicted(file, conflictedFilesProvider),
 		),
-		commands.registerCommand("meld-auto-merge.rerereForget", (file?: GitFile) =>
-			handleRerereForget(file, conflictedFilesProvider),
+		commands.registerCommand(
+			"meld-auto-merge.rerereForget",
+			(file?: GitFile) =>
+				handleRerereForget(file, conflictedFilesProvider),
 		),
 		commands.registerCommand("meld-auto-merge.smartAdd", (file?: GitFile) =>
 			handleSmartAdd(file, conflictedFilesProvider),
