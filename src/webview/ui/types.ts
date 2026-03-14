@@ -20,19 +20,19 @@ export const DiffIndex = {
 } as const;
 export type DiffIndex = (typeof DiffIndex)[keyof typeof DiffIndex];
 
+export interface Commit {
+	hash: string;
+	title: string;
+	authorName: string;
+	authorEmail: string;
+	date: string;
+	body: string;
+}
+
 export interface FileState {
 	label: string;
 	content: string;
-	commit?:
-		| {
-				hash: string;
-				title: string;
-				authorName: string;
-				authorEmail: string;
-				date: string;
-				body: string;
-		  }
-		| undefined;
+	commit?: Commit | undefined;
 }
 
 export interface DiffChunk {

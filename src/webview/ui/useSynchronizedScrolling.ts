@@ -142,27 +142,46 @@ function syncScrollToTarget(opts: SyncOptions) {
 
 const getPaneCounts = (
 	editorRefs: React.MutableRefObject<editor.IStandaloneCodeEditor[]>,
-): [number, number, number, number, number] => {
-	return [
-		editorRefs.current[0]?.getModel()?.getLineCount() ?? 1,
-		editorRefs.current[1]?.getModel()?.getLineCount() ?? 1,
-		editorRefs.current[2]?.getModel()?.getLineCount() ?? 1,
-		editorRefs.current[3]?.getModel()?.getLineCount() ?? 1,
-		editorRefs.current[4]?.getModel()?.getLineCount() ?? 1,
-	];
+): [number, number, number, number, number] | null => {
+	const counts: number[] = [];
+	for (let i = 0; i < 5; i++) {
+		const model = editorRefs.current[i]?.getModel();
+		if (!model) {
+			if (i === 1 || i === 2 || i === 3) {
+				return null;
+			}
+			counts.push(0);
+			continue;
+		}
+		counts.push(model.getLineCount());
+	}
+	return counts as [number, number, number, number, number];
 };
 
-function syncVerticalScroll(
-	sourceEd: editor.IStandaloneCodeEditor,
-	sourceIndex: number,
-	scrollTop: number,
-	paneCounts: [number, number, number, number, number],
-	editorRefs: React.MutableRefObject<editor.IStandaloneCodeEditor[]>,
-	diffsRef: React.MutableRefObject<(DiffChunk[] | null)[]>,
-	diffsAreReversedRef: React.MutableRefObject<boolean[]>,
-	smoothScrolling: boolean,
-	targetIndices?: number[],
-) {
+interface VerticalSyncContext {
+	sourceEd: editor.IStandaloneCodeEditor;
+	sourceIndex: number;
+	scrollTop: number;
+	paneCounts: [number, number, number, number, number];
+	editorRefs: React.MutableRefObject<editor.IStandaloneCodeEditor[]>;
+	diffsRef: React.MutableRefObject<(DiffChunk[] | null)[]>;
+	diffsAreReversedRef: React.MutableRefObject<boolean[]>;
+	smoothScrolling: boolean;
+	targetIndices?: number[] | undefined;
+}
+
+function syncVerticalScroll(ctx: VerticalSyncContext) {
+	const {
+		sourceEd,
+		sourceIndex,
+		scrollTop,
+		paneCounts,
+		editorRefs,
+		diffsRef,
+		diffsAreReversedRef,
+		smoothScrolling,
+		targetIndices,
+	} = ctx;
 	const { height } = sourceEd.getLayoutInfo();
 	const { syncpoint, syncY } = getSyncPointY(
 		scrollTop,
@@ -181,7 +200,7 @@ function syncVerticalScroll(
 				sourceLineDecimal: sourceLineDec,
 				paneCounts,
 				syncpoint,
-				targetIndices: targetIndices ?? undefined,
+				targetIndices,
 				diffs: diffsRef.current,
 				diffsAreReversed: diffsAreReversedRef.current,
 				smoothScrolling,
@@ -215,17 +234,19 @@ const useSynchronizedScrolling = (
 			try {
 				if (scrollTop !== undefined) {
 					const paneCounts = getPaneCounts(editorRefs);
-					syncVerticalScroll(
-						sourceEd,
-						sourceIndex,
-						scrollTop,
-						paneCounts,
-						editorRefs,
-						diffsRef,
-						diffsAreReversedRef,
-						smoothScrolling,
-						targetIndices,
-					);
+					if (paneCounts) {
+						syncVerticalScroll({
+							sourceEd,
+							sourceIndex,
+							scrollTop,
+							paneCounts,
+							editorRefs,
+							diffsRef,
+							diffsAreReversedRef,
+							smoothScrolling,
+							targetIndices,
+						});
+					}
 				}
 				if (scrollLeft !== undefined) {
 					syncHorizontalScroll(

@@ -50,7 +50,10 @@ export function useClipboardOverrides(
 	);
 
 	React.useEffect(() => {
-		const handlePaste = (e: ClipboardEvent, activeEditor: editor.IStandaloneCodeEditor) => {
+		const handlePaste = (
+			e: ClipboardEvent,
+			activeEditor: editor.IStandaloneCodeEditor,
+		) => {
 			if (!activeEditor.getOption(editor.EditorOption.readOnly)) {
 				e.preventDefault();
 				requestClipboardText().then((text) => {
@@ -62,24 +65,27 @@ export function useClipboardOverrides(
 		const getSelectionText = (editor: editor.IStandaloneCodeEditor) => {
 			const selection = editor.getSelection();
 			const model = editor.getModel();
-			if (!selection || !model) {
-				return null;
-			}
-
-			let text = "";
-			let rangeToDelete = selection;
-
-			if (selection.isEmpty()) {
-				const line = selection.startLineNumber;
-				text = `${model.getLineContent(line)}\n`;
-				rangeToDelete = new Selection(line, 1, line + 1, 1);
-			} else {
-				text = model.getValueInRange(selection);
-			}
-			return { text, rangeToDelete };
+			return selection && model
+				? {
+						text: selection.isEmpty()
+							? `${model.getLineContent(selection.startLineNumber)}\n`
+							: model.getValueInRange(selection),
+						rangeToDelete: selection.isEmpty()
+							? new Selection(
+									selection.startLineNumber,
+									1,
+									selection.startLineNumber + 1,
+									1,
+								)
+							: selection,
+					}
+				: null;
 		};
 
-		const handleCopyCut = (e: ClipboardEvent, activeEditor: editor.IStandaloneCodeEditor) => {
+		const handleCopyCut = (
+			e: ClipboardEvent,
+			activeEditor: editor.IStandaloneCodeEditor,
+		) => {
 			const result = getSelectionText(activeEditor);
 			if (!result) {
 				return;

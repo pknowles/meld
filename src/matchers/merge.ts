@@ -189,38 +189,70 @@ class AutoMergeDiffer extends Differ {
 		let seq1: DiffChunk | null = null;
 
 		while (true) {
-			if (!seq0) {
-				seq0 = using0.shift() || null;
-				if (!seq0) {
-					break;
-				}
-				cursors.i0 = seq0.startA;
-				cursors.end0 = seq0.endB;
+			const populated = this._populateSequences(
+				using0,
+				using1,
+				seq0,
+				seq1,
+				cursors,
+			);
+			if (!populated) {
+				break;
 			}
-			if (!seq1) {
-				seq1 = using1.shift() || null;
-				if (!seq1) {
-					break;
-				}
-				cursors.i1 = seq1.startA;
-				cursors.end1 = seq1.endB;
-			}
+			seq0 = populated.seq0;
+			seq1 = populated.seq1;
 
 			yield* this._yieldOverlappingConflict(seq0, seq1, cursors);
 
 			const lowEnd = Math.min(seq0.endA, seq1.endA);
 			yield* this._yieldOverlappingDelete(seq0, seq1, cursors, lowEnd);
 
+			const advanced = this._advanceCursors(seq0, seq1, lowEnd);
+			seq0 = advanced.seq0;
+			seq1 = advanced.seq1;
 			cursors.i0 = cursors.i1 = lowEnd;
-			if (lowEnd === seq0.endA) {
-				seq0 = null;
-			}
-			if (lowEnd === seq1.endA) {
-				seq1 = null;
-			}
 		}
 
 		yield* this._yieldRemainingSameTagConflicts(seq0, seq1, cursors);
+	}
+
+	protected _populateSequences(
+		using0: DiffChunk[],
+		using1: DiffChunk[],
+		seq0: DiffChunk | null,
+		seq1: DiffChunk | null,
+		cursors: { i0: number; i1: number; end0: number; end1: number },
+	): { seq0: DiffChunk; seq1: DiffChunk } | null {
+		let s0 = seq0;
+		let s1 = seq1;
+		if (!s0) {
+			s0 = using0.shift() || null;
+			if (!s0) {
+				return null;
+			}
+			cursors.i0 = s0.startA;
+			cursors.end0 = s0.endB;
+		}
+		if (!s1) {
+			s1 = using1.shift() || null;
+			if (!s1) {
+				return null;
+			}
+			cursors.i1 = s1.startA;
+			cursors.end1 = s1.endB;
+		}
+		return { seq0: s0, seq1: s1 };
+	}
+
+	protected _advanceCursors(
+		seq0: DiffChunk,
+		seq1: DiffChunk,
+		lowEnd: number,
+	): { seq0: DiffChunk | null; seq1: DiffChunk | null } {
+		return {
+			seq0: lowEnd === seq0.endA ? null : seq0,
+			seq1: lowEnd === seq1.endA ? null : seq1,
+		};
 	}
 
 	protected *_yieldOverlappingConflict(
