@@ -1,31 +1,56 @@
 // Copyright (C) 2026 Pyarelal Knowles, GPL v2
 
-import * as vscode from "vscode";
+import { extensions, workspace } from "vscode";
 
-export async function getGitExecutable(): Promise<string> {
-	const gitExtension = vscode.extensions.getExtension("vscode.git");
+interface GitAPI {
+	git: {
+		path: string;
+	};
+}
+
+interface GitExtension {
+	getAPI(version: number): GitAPI;
+}
+
+async function getExtensionPath(): Promise<string | undefined> {
+	const gitExtension = extensions.getExtension<GitExtension>("vscode.git");
 	if (gitExtension) {
 		if (!gitExtension.isActive) {
 			await gitExtension.activate();
 		}
 		const exports = gitExtension.exports;
-		if (typeof exports?.getAPI === "function") {
+		if (exports && typeof exports.getAPI === "function") {
 			const api = exports.getAPI(1);
 			if (api?.git?.path) {
 				return api.git.path;
 			}
 		}
 	}
-	const configPath = vscode.workspace
+	return;
+}
+
+function getConfigPath(): string | undefined {
+	const configPath = workspace
 		.getConfiguration("git")
 		.get<string | string[]>("path");
-	if (configPath) {
-		if (Array.isArray(configPath) && configPath.length > 0) {
-			return configPath[0];
-		}
-		if (typeof configPath === "string" && configPath.trim() !== "") {
-			return configPath;
+
+	if (Array.isArray(configPath) && configPath.length > 0) {
+		const first = configPath[0];
+		if (first) {
+			return first;
 		}
 	}
-	return "git";
+	if (typeof configPath === "string" && configPath.trim() !== "") {
+		return configPath;
+	}
+	return;
+}
+
+export async function getGitExecutable(): Promise<string> {
+	const extensionPath = await getExtensionPath();
+	if (extensionPath) {
+		return extensionPath;
+	}
+	const configPath = getConfigPath();
+	return configPath || "git";
 }

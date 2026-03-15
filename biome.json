@@ -8,28 +8,135 @@
 	"files": {
 		"ignoreUnknown": true
 	},
+	"formatter": {
+		"enabled": true,
+		"formatWithErrors": false,
+		"attributePosition": "auto",
+		"indentStyle": "tab",
+		"indentWidth": 4,
+		"lineWidth": 80,
+		"lineEnding": "lf"
+	},
+	"javascript": {
+		"jsxRuntime": "transparent"
+	},
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true
+			"recommended": true,
+			"correctness": "error",
+			"suspicious": "error",
+			"style": "error",
+			"complexity": "error",
+			"performance": "error",
+			"security": "error",
+			"nursery": "off"
 		}
 	},
 	"overrides": [
 		{
-			"includes": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"],
+			"includes": ["**/*"],
 			"linter": {
 				"rules": {
-					"recommended": true,
+					"correctness": {
+						"useQwikValidLexicalScope": "off",
+						"noUnresolvedImports": "off",
+						"noSolidDestructuredProps": "off",
+						"noNodejsModules": "off",
+						"noUndeclaredDependencies": "off",
+						"useUniqueElementIds": "off"
+					},
+					"complexity": {
+						"noExcessiveLinesPerFunction": {
+							"level": "error",
+							"options": {
+								"maxLines": 100
+							}
+						},
+						"useMaxParams": {
+							"level": "error",
+							"options": {
+								"max": 5
+							}
+						},
+						"noExcessiveCognitiveComplexity": {
+							"level": "error",
+							"options": {
+								"maxAllowedComplexity": 15
+							}
+						}
+					},
+					"security": {
+						"noSecrets": "off"
+					},
 					"style": {
-						"useConst": "error",
-						"noNonNullAssertion": "error"
+						"noMagicNumbers": "off",
+						"useNamingConvention": {
+							"level": "error",
+							"options": {
+								"strictCase": false
+							}
+						},
+						"useFilenamingConvention": {
+							"level": "error",
+							"options": {
+								"strictCase": false
+							}
+						},
+						"noNestedTernary": "off",
+						"noJsxLiterals": "off",
+						"noParameterAssign": "off"
 					},
 					"suspicious": {
-						"noExplicitAny": "error"
+						"noBitwiseOperators": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["**/*.ts", "**/*.js"]
+		},
+		{
+			"includes": ["**/*.tsx", "**/*.jsx"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noReactSpecificProps": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["jest.config.js", ".dependency-cruiser.js"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noReactSpecificProps": "off"
 					},
-					"correctness": {
-						"useExhaustiveDependencies": "error",
-						"useHookAtTopLevel": "error"
+					"style": {
+						"noDefaultExport": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["**/*.test.ts", "**/*.test.tsx"],
+			"javascript": {
+				"globals": [
+					"jest",
+					"expect",
+					"describe",
+					"it",
+					"beforeAll",
+					"afterAll",
+					"beforeEach",
+					"afterEach"
+				]
+			},
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "off"
 					}
 				}
 			}

@@ -1,5 +1,19 @@
 # Future Improvements & Known Issues
 
+## Perf improvements
+
+Update SVG connection attributes rather than re-render the entire SVG. This involves keeping track of which we've displayed/culled, only updating the svg if those changed, and otherwise just updating the path coordinates.
+
+## Fix commit message titles
+
+Make sure the toggle compare-with-base icons are always visible - currently if there's not enough spacing they disappear
+
+Make the commit title fill the space but use a ... ellipsis when the title is too long; remove the square brackets around it
+
+Check the commit message font matches the rest - it looks odd. Maybe even just replace the message with an icon to see the card.
+
+Match the commit mssage card contents in upstream vscode?
+
 ## Detect when the user forgot to resolve a conflict and preserve conflict markers
 
 This is a feature meld doesn't have; probably because it's hard.
@@ -49,6 +63,25 @@ To solve a possible delay reading a 10MB index.tsx all at once...
 *   **Configure Loader**: Set `loader.config({ paths: { vs: window.__MONACO_VS_URI__ } })` so Monaco lazy-loads instead of bundling entirely.
 *   **Fix Workers**: Fix cross-origin worker issues by returning a Blob in `getWorkerUrl` that uses `importScripts('${window.__MONACO_VS_URI__}/base/worker/workerMain.js')` so bundler plugins are not required.
 
+### Profiler Insights - First Launch
+
+The trace confirms several bottlenecks that back up the lazy-load idea:
+*   **Startup Latency**: `EvaluateScript` (~863ms) and `v8.compile` (~221ms) consume **>1s** during webview initialization for the **11MB** bundle. This effectively blocks the main thread during the critical first paint.
+*   **Persistent Animations**: Long-running `Animation` slices (up to **3.8s**) account for nearly **70%** of the 5.5s trace session. This suggests that the side-panel transitions (`AnimatedColumn`) or SVG overlays (`DiffCurtain`) may be triggering redundant layout work or failing to terminate.
+*   **Execution Hotspots**:
+    *   `performWorkUntilDeadline` (React Scheduler) is the dominant function call, indicating React is struggling with a high volume of work or double-rendering (check `React.StrictMode` impact).
+    *   `onmessage` and `l.onmessage` show overhead in the webview-to-extension message bus coordination.
+
+### Profiler Insights - Resizing & Scrolling
+
+The traces `Trace-20260307T154206_resizing.json` and `Trace-20260307T154834_scrolling.json` reveal significant localized bottlenecks:
+*   **Synchronous Layout Thrashing**: During scrolling, `DiffCurtain.tsx` calls `getTopForLineNumber()` multiple times per diff chunk. In a file with many changes, this triggers hundreds of synchronous layout hits to Monaco's engine per frame, exceeding the 16ms budget.
+*   **Async Task Loop**: 43,019 `v8::Debugger::AsyncTaskRun` slices indicate a scroll-synchronization feedback loop. The `scrollLock` release in `requestAnimationFrame` (in `useSynchronizedScrolling.ts`) creates a window where events are queued before the lock resets.
+*   **React Render Storm**: `setRenderTrigger` is called on every scroll pixel, forcing a full reconciliation of the `Meld` app, all 5 editors, and all SVG curtains 60+ times per second.
+*   **Highlight Calculation Sink**: `getHighlights(index)` is called during every `App` render. For every `replace` chunk, it performs string slicing, joining, and calls `diffChars()` (character-level diffing) on the main thread. This is a massive CPU sink that should be memoized or computed once per content change.
+*   **Resize Overhead**: Resizing the window triggers ~1,800 layout passes. Monaco resizes every pixel, and `ResizeObserver` callbacks in the curtains trigger forced layouts by measuring `getBoundingClientRect()`.
+*   **CSS Animation Bloat**: Scrollbar fade animations are running for ~780ms, likely because layout thrashing prevents them from settling or fading out smoothly.
+
 ## Open Blank 3-way merge
 
 For people that want a 3-way merge with copy/pasted content. We'd need to make
@@ -58,7 +91,7 @@ save individual panels. Low !/$.
 
 ## Assorted Polish
 
-- **Scroll Perf**: `React.memo(CodePane)` to prevent full re-renders on scroll frames.
+- **Scroll Perf**: Throttle `setRenderTrigger` or move curtain drawing out of React; use `React.memo` for `CodePane`; cache line positions to avoid synchronous `getTopForLineNumber` calls during scroll.
 - **Maintainability**: Replace magic indices (0-4) with an `enum`/`const` mapping or just use arrays.
 - **Fix Returns**: Handle failures properly, e.g. from `getGitState`, without silently passing empty strings.
 - **UX**: Rethink `Ctrl+K` to avoid interfering with global VS Code chord prefixes.

@@ -13,15 +13,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import { Differ } from "./diffutil";
+import { Differ } from "./diffutil.ts";
 import {
 	type DiffChunk,
 	type DiffChunkTag,
 	MyersSequenceMatcher,
-} from "./myers";
+} from "./myers.ts";
 
 class AutoMergeDiffer extends Differ {
-	auto_merge: boolean = false;
+	autoMerge = false;
 	unresolved: number[] = [];
 
 	constructor() {
@@ -29,229 +29,326 @@ class AutoMergeDiffer extends Differ {
 		this._matcher = MyersSequenceMatcher;
 	}
 
-	*_auto_merge(
-		using: DiffChunk[][],
+	override *_autoMerge(
+		using: [DiffChunk[], DiffChunk[]],
 		texts: string[][],
 	): Generator<[DiffChunk, DiffChunk]> {
-		for (const [out0_orig, out1_orig] of super._auto_merge(using, texts)) {
-			let out0 = out0_orig;
-			let out1 = out1_orig;
-
-			if (this.auto_merge && out0.tag === "conflict") {
-				const l0 = out0.start_b,
-					h0 = out0.end_b;
-				const l1 = out0.start_a,
-					h1 = out0.end_a;
-				const l2 = out1.start_b,
-					h2 = out1.end_b;
-
-				const len0 = h0 - l0;
-				const len1 = h1 - l1;
-				const len2 = h2 - l2;
-
-				if (
-					len0 > 0 &&
-					len2 > 0 &&
-					(len0 === len1 || len2 === len1 || len1 === 0)
-				) {
-					const matcher = new this._matcher(
-						null,
-						texts[0].slice(l0, h0),
-						texts[2].slice(l2, h2),
-					);
-					for (const chunk of matcher.get_opcodes()) {
-						let s1 = l1;
-						let e1 = l1;
-						if (len0 === len1) {
-							s1 += chunk.start_a;
-							e1 += chunk.end_a;
-						} else if (len2 === len1) {
-							s1 += chunk.start_b;
-							e1 += chunk.end_b;
-						}
-
-						const out0_bounds = {
-							start_a: s1,
-							end_a: e1,
-							start_b: l0 + chunk.start_a,
-							end_b: l0 + chunk.end_a,
-						};
-						const out1_bounds = {
-							start_a: s1,
-							end_a: e1,
-							start_b: l2 + chunk.start_b,
-							end_b: l2 + chunk.end_b,
-						};
-
-						if (chunk.tag === "equal") {
-							out0 = { tag: "replace", ...out0_bounds };
-							out1 = { tag: "replace", ...out1_bounds };
-						} else {
-							out0 = { tag: "conflict", ...out0_bounds };
-							out1 = { tag: "conflict", ...out1_bounds };
-						}
-						yield [out0, out1];
-					}
+		for (const [out0, out1] of super._autoMerge(using, texts)) {
+			if (this.autoMerge && (out0.tag as string) === "conflict") {
+				if (this._shouldTryFineGrained(out0, out1)) {
+					yield* this._handleFineGrainedConflict(out0, out1, texts);
 					continue;
-				} else {
-					let chunktype: DiffChunkTag | null = using[0][0].tag;
-					for (const chunkarr of using) {
-						for (const chunk of chunkarr) {
-							if (chunk.tag !== chunktype) {
-								chunktype = null;
-								break;
-							}
-						}
-						if (!chunktype) break;
-					}
+				}
 
-					if (chunktype === "delete") {
-						let seq0: DiffChunk | null = null;
-						let seq1: DiffChunk | null = null;
-						let i0 = 0,
-							i1 = 0,
-							end0 = 0,
-							end1 = 0;
-						const using0 = using[0].slice();
-						const using1 = using[1].slice();
-
-						while (true) {
-							if (!seq0) {
-								seq0 = using0.shift() || null;
-								if (!seq0) break;
-								i0 = seq0.start_a;
-								end0 = seq0.end_b;
-							}
-							if (!seq1) {
-								seq1 = using1.shift() || null;
-								if (!seq1) break;
-								i1 = seq1.start_a;
-								end1 = seq1.end_b;
-							}
-
-							const highstart = Math.max(i0, i1);
-							if (i0 !== i1) {
-								yield [
-									{
-										tag: "conflict",
-										start_a: i0 - highstart + i1,
-										end_a: highstart,
-										start_b: seq0.start_b - highstart + i1,
-										end_b: seq0.start_b,
-									},
-									{
-										tag: "conflict",
-										start_a: i1 - highstart + i0,
-										end_a: highstart,
-										start_b: seq1.start_b - highstart + i0,
-										end_b: seq1.start_b,
-									},
-								];
-							}
-
-							const lowend = Math.min(seq0.end_a, seq1.end_a);
-							if (highstart !== lowend) {
-								yield [
-									{
-										tag: "delete",
-										start_a: highstart,
-										end_a: lowend,
-										start_b: seq0.start_b,
-										end_b: seq0.end_b,
-									},
-									{
-										tag: "delete",
-										start_a: highstart,
-										end_a: lowend,
-										start_b: seq1.start_b,
-										end_b: seq1.end_b,
-									},
-								];
-							}
-
-							i0 = i1 = lowend;
-							if (lowend === seq0.end_a) seq0 = null;
-							if (lowend === seq1.end_a) seq1 = null;
-						}
-
-						if (seq0) {
-							yield [
-								{
-									tag: "conflict",
-									start_a: i0,
-									end_a: seq0.end_a,
-									start_b: seq0.start_b,
-									end_b: seq0.end_b,
-								},
-								{
-									tag: "conflict",
-									start_a: i0,
-									end_a: seq0.end_a,
-									start_b: end1,
-									end_b: end1 + seq0.end_a - i0,
-								},
-							];
-						} else if (seq1) {
-							yield [
-								{
-									tag: "conflict",
-									start_a: i1,
-									end_a: seq1.end_a,
-									start_b: end0,
-									end_b: end0 + seq1.end_a - i1,
-								},
-								{
-									tag: "conflict",
-									start_a: i1,
-									end_a: seq1.end_a,
-									start_b: seq1.start_b,
-									end_b: seq1.end_b,
-								},
-							];
-						}
-						continue;
-					}
+				if (this._getCommonTag(using) === "delete") {
+					yield* this._handleSameTagConflict(using);
+					continue;
 				}
 			}
 			yield [out0, out1];
 		}
 	}
 
-	change_sequence(
+	protected _shouldTryFineGrained(out0: DiffChunk, out1: DiffChunk): boolean {
+		const len0 = out0.endB - out0.startB;
+		const len1 = out0.endA - out0.startA;
+		const len2 = out1.endB - out1.startB;
+		return (
+			len0 > 0 &&
+			len2 > 0 &&
+			(len0 === len1 || len2 === len1 || len1 === 0)
+		);
+	}
+
+	protected _getCommonTag(
+		using: [DiffChunk[], DiffChunk[]],
+	): DiffChunkTag | null {
+		const chunkType: DiffChunkTag | null = using[0][0]?.tag ?? null;
+		for (const chunkArr of using) {
+			for (const chunk of chunkArr) {
+				if (chunk.tag !== chunkType) {
+					return null;
+				}
+			}
+		}
+		return chunkType;
+	}
+
+	protected *_handleFineGrainedConflict(
+		out0: DiffChunk,
+		out1: DiffChunk,
+		texts: string[][],
+	): Generator<[DiffChunk, DiffChunk]> {
+		const l0 = out0.startB;
+		const h0 = out0.endB;
+		const l1 = out0.startA;
+		const l2 = out1.startB;
+		const h2 = out1.endB;
+
+		const len0 = h0 - l0;
+		const len1 = out0.endA - l1;
+		const len2 = h2 - l2;
+
+		const baseLines = texts[0];
+		const incomingLines = texts[2];
+		if (baseLines && incomingLines) {
+			const matcher = new this._matcher(
+				null,
+				baseLines.slice(l0, h0),
+				incomingLines.slice(l2, h2),
+			);
+			for (const chunk of matcher.getOpcodes()) {
+				let s1 = l1;
+				let e1 = l1;
+				if (len0 === len1) {
+					s1 += chunk.startA;
+					e1 += chunk.endA;
+				} else if (len2 === len1) {
+					s1 += chunk.startB;
+					e1 += chunk.endB;
+				}
+
+				const out0Bounds = {
+					startA: s1,
+					endA: e1,
+					startB: l0 + chunk.startA,
+					endB: l0 + chunk.endA,
+				};
+				const out1Bounds = {
+					startA: s1,
+					endA: e1,
+					startB: l2 + chunk.startB,
+					endB: l2 + chunk.endB,
+				};
+
+				let out0Res: DiffChunk;
+				let out1Res: DiffChunk;
+				if (chunk.tag === "equal") {
+					out0Res = { tag: "replace", ...out0Bounds };
+					out1Res = { tag: "replace", ...out1Bounds };
+				} else {
+					out0Res = { tag: "conflict", ...out0Bounds };
+					out1Res = { tag: "conflict", ...out1Bounds };
+				}
+				yield [out0Res, out1Res];
+			}
+		}
+	}
+
+	override changeSequence(
 		sequence: number,
-		startidx: number,
-		sizechange: number,
+		startIdx: number,
+		sizeChange: number,
 		texts: string[][],
 	) {
 		if (sequence === 1) {
-			let lo = 0;
-			for (const c of this.unresolved) {
-				if (startidx <= c) break;
-				lo++;
-			}
-			if (lo < this.unresolved.length) {
-				let hi = lo;
-				if (sizechange < 0) {
-					for (const c of this.unresolved.slice(lo)) {
-						if (startidx - sizechange <= c) break;
-						hi++;
-					}
-				} else if (sizechange === 0 && startidx === this.unresolved[lo]) {
-					hi++;
-				}
-
-				if (hi < this.unresolved.length) {
-					const shifted = this.unresolved.slice(hi).map((c) => c + sizechange);
-					this.unresolved.splice(hi, this.unresolved.length - hi, ...shifted);
-				}
-				this.unresolved.splice(lo, hi - lo);
-			}
+			this._updateUnresolved(startIdx, sizeChange);
 		}
-		super.change_sequence(sequence, startidx, sizechange, texts);
+		super.changeSequence(sequence, startIdx, sizeChange, texts);
 	}
 
-	get_unresolved_count(): number {
+	protected _updateUnresolved(startIdx: number, sizeChange: number) {
+		const lo = this.unresolved.findIndex((c) => startIdx <= c);
+		if (lo === -1 || lo >= this.unresolved.length) {
+			return;
+		}
+
+		let hi = lo;
+		if (sizeChange < 0) {
+			const endRange = startIdx - sizeChange;
+			for (let i = lo; i < this.unresolved.length; i++) {
+				const val = this.unresolved[i];
+				if (val === undefined || endRange <= val) {
+					break;
+				}
+				hi++;
+			}
+		} else if (sizeChange === 0 && startIdx === this.unresolved[lo]) {
+			hi++;
+		}
+
+		if (hi < this.unresolved.length) {
+			const shifted = this.unresolved
+				.slice(hi)
+				.map((c) => c + sizeChange);
+			this.unresolved.splice(hi, this.unresolved.length - hi, ...shifted);
+		}
+		this.unresolved.splice(lo, hi - lo);
+	}
+
+	getUnresolvedCount(): number {
 		return this.unresolved.length;
+	}
+	protected *_handleSameTagConflict(
+		using: [DiffChunk[], DiffChunk[]],
+	): Generator<[DiffChunk, DiffChunk]> {
+		const cursors = { i0: 0, i1: 0, end0: 0, end1: 0 };
+		const using0 = using[0].slice();
+		const using1 = using[1].slice();
+		let seq0: DiffChunk | null = null;
+		let seq1: DiffChunk | null = null;
+
+		while (true) {
+			const populated = this._populateSequences(
+				using0,
+				using1,
+				seq0,
+				seq1,
+				cursors,
+			);
+			if (!populated) {
+				break;
+			}
+			seq0 = populated.seq0;
+			seq1 = populated.seq1;
+
+			yield* this._yieldOverlappingConflict(seq0, seq1, cursors);
+
+			const lowEnd = Math.min(seq0.endA, seq1.endA);
+			yield* this._yieldOverlappingDelete(seq0, seq1, cursors, lowEnd);
+
+			const advanced = this._advanceCursors(seq0, seq1, lowEnd);
+			seq0 = advanced.seq0;
+			seq1 = advanced.seq1;
+			cursors.i0 = cursors.i1 = lowEnd;
+		}
+
+		yield* this._yieldRemainingSameTagConflicts(seq0, seq1, cursors);
+	}
+
+	protected _populateSequences(
+		using0: DiffChunk[],
+		using1: DiffChunk[],
+		seq0: DiffChunk | null,
+		seq1: DiffChunk | null,
+		cursors: { i0: number; i1: number; end0: number; end1: number },
+	): { seq0: DiffChunk; seq1: DiffChunk } | null {
+		let s0 = seq0;
+		let s1 = seq1;
+		if (!s0) {
+			s0 = using0.shift() || null;
+			if (!s0) {
+				return null;
+			}
+			cursors.i0 = s0.startA;
+			cursors.end0 = s0.endB;
+		}
+		if (!s1) {
+			s1 = using1.shift() || null;
+			if (!s1) {
+				return null;
+			}
+			cursors.i1 = s1.startA;
+			cursors.end1 = s1.endB;
+		}
+		return { seq0: s0, seq1: s1 };
+	}
+
+	protected _advanceCursors(
+		seq0: DiffChunk,
+		seq1: DiffChunk,
+		lowEnd: number,
+	): { seq0: DiffChunk | null; seq1: DiffChunk | null } {
+		return {
+			seq0: lowEnd === seq0.endA ? null : seq0,
+			seq1: lowEnd === seq1.endA ? null : seq1,
+		};
+	}
+
+	protected *_yieldOverlappingConflict(
+		seq0: DiffChunk,
+		seq1: DiffChunk,
+		cursors: { i0: number; i1: number },
+	): Generator<[DiffChunk, DiffChunk]> {
+		const highStart = Math.max(cursors.i0, cursors.i1);
+		if (cursors.i0 !== cursors.i1) {
+			yield [
+				{
+					tag: "conflict",
+					startA: cursors.i0 - highStart + cursors.i1,
+					endA: highStart,
+					startB: seq0.startB - highStart + cursors.i1,
+					endB: seq0.startB,
+				},
+				{
+					tag: "conflict",
+					startA: cursors.i1 - highStart + cursors.i0,
+					endA: highStart,
+					startB: seq1.startB - highStart + cursors.i0,
+					endB: seq1.startB,
+				},
+			];
+		}
+	}
+
+	protected *_yieldOverlappingDelete(
+		seq0: DiffChunk,
+		seq1: DiffChunk,
+		cursors: { i0: number; i1: number },
+		lowEnd: number,
+	): Generator<[DiffChunk, DiffChunk]> {
+		const highStart = Math.max(cursors.i0, cursors.i1);
+		if (highStart !== lowEnd) {
+			yield [
+				{
+					tag: "delete",
+					startA: highStart,
+					endA: lowEnd,
+					startB: seq0.startB,
+					endB: seq0.endB,
+				},
+				{
+					tag: "delete",
+					startA: highStart,
+					endA: lowEnd,
+					startB: seq1.startB,
+					endB: seq1.endB,
+				},
+			];
+		}
+	}
+
+	protected *_yieldRemainingSameTagConflicts(
+		seq0: DiffChunk | null,
+		seq1: DiffChunk | null,
+		cursors: { i0: number; i1: number; end0: number; end1: number },
+	): Generator<[DiffChunk, DiffChunk]> {
+		const { i0, i1, end0, end1 } = cursors;
+		if (seq0) {
+			yield [
+				{
+					tag: "conflict",
+					startA: i0,
+					endA: seq0.endA,
+					startB: seq0.startB,
+					endB: seq0.endB,
+				},
+				{
+					tag: "conflict",
+					startA: i0,
+					endA: seq0.endA,
+					startB: end1,
+					endB: end1 + seq0.endA - i0,
+				},
+			];
+		} else if (seq1) {
+			yield [
+				{
+					tag: "conflict",
+					startA: i1,
+					endA: seq1.endA,
+					startB: end0,
+					endB: end0 + seq1.endA - i1,
+				},
+				{
+					tag: "conflict",
+					startA: i1,
+					endA: seq1.endA,
+					startB: seq1.startB,
+					endB: seq1.endB,
+				},
+			];
+		}
 	}
 }
 
@@ -262,7 +359,7 @@ export class Merger extends Differ {
 	constructor() {
 		super();
 		this.differ = new AutoMergeDiffer();
-		this.differ.auto_merge = true;
+		this.differ.autoMerge = true;
 		this.differ.unresolved = [];
 	}
 
@@ -270,97 +367,211 @@ export class Merger extends Differ {
 		sequences: string[][],
 		texts: string[][],
 	): Generator<number | null, void, unknown> {
-		const step = this.differ.set_sequences_iter(sequences);
+		const step = this.differ.setSequencesIter(sequences);
 		while (true) {
 			const result = step.next();
-			if (result.done) break;
-			if (result.value === null) yield null;
+			if (result.done) {
+				break;
+			}
+			if (result.value === null) {
+				yield null;
+			}
 		}
 		this.texts = texts;
 		yield 1;
 	}
 
-	_apply_change(
-		text: ReadonlyArray<string>,
+	_applyChange(
+		text: readonly string[],
 		change: DiffChunk,
 		mergedtext: string[],
 	): number {
 		if (change.tag === "insert") {
-			for (let i = change.start_b; i < change.end_b; i++) {
-				mergedtext.push(text[i]);
+			for (let i = change.startB; i < change.endB; i++) {
+				const line = text[i];
+				mergedtext.push(line ?? "");
 			}
 			return 0;
-		} else if (change.tag === "replace") {
-			for (let i = change.start_b; i < change.end_b; i++) {
-				mergedtext.push(text[i]);
-			}
-			return change.end_a - change.start_a;
-		} else {
-			return change.end_a - change.start_a;
 		}
+
+		if (change.tag === "replace" || (change.tag as string) === "conflict") {
+			for (let i = change.startB; i < change.endB; i++) {
+				const line = text[i];
+				mergedtext.push(line ?? "");
+			}
+			return change.endA - change.startA;
+		}
+
+		return change.endA - change.startA;
 	}
 
-	*merge_3_files(
-		mark_conflicts: boolean = true,
+	*merge3Files(
+		markConflicts = true,
 	): Generator<string | null, string | undefined, unknown> {
 		this.differ.unresolved = [];
 		let lastline = 0;
 		let mergedline = 0;
 		const mergedtext: string[] = [];
-		for (const change of this.differ.all_changes()) {
+
+		for (const change of this.differ.allChanges()) {
 			yield null;
-			let low_mark = lastline;
 			const ch0 = change[0];
 			const ch1 = change[1];
+			const lowMark = this._calculateLowMark(ch0, ch1, lastline);
 
-			if (ch0 !== null) low_mark = ch0.start_a;
-			if (ch1 !== null && ch1.start_a > low_mark) {
-				low_mark = ch1.start_a;
-			}
+			const syncResult = this._syncWithBase(
+				lastline,
+				lowMark,
+				mergedtext,
+				mergedline,
+			);
+			mergedline = syncResult.mergedline;
+			lastline = lowMark;
 
-			for (let i = lastline; i < low_mark; i++) {
-				mergedtext.push(this.texts[1][i]);
-			}
-			mergedline += low_mark - lastline;
-			lastline = low_mark;
-
-			if (
-				ch0 !== null &&
-				ch1 !== null &&
-				(ch0.tag === "conflict" ||
-					ch1.tag === "conflict" ||
-					ch0.end_a !== ch1.end_a)
-			) {
-				const high_mark = Math.max(ch0.end_a, ch1.end_a);
-				if (mark_conflicts) {
-					if (low_mark < high_mark) {
-						for (let i = low_mark; i < high_mark; i++) {
-							mergedtext.push(`(??)${this.texts[1][i]}`);
-							this.differ.unresolved.push(mergedline);
-							mergedline += 1;
-						}
-					} else {
-						mergedtext.push("(??)");
-						this.differ.unresolved.push(mergedline);
-						mergedline += 1;
-					}
-					lastline = high_mark;
+			if (this._isConflicting(ch0, ch1)) {
+				const highMark = Math.max(ch0?.endA ?? 0, ch1?.endA ?? 0);
+				if (markConflicts) {
+					const conflictResult = this._handleConflictInMerger(
+						lowMark,
+						highMark,
+						mergedtext,
+						mergedline,
+					);
+					mergedline = conflictResult.mergedline;
+					lastline = highMark;
 				}
-			} else if (ch0 !== null) {
-				lastline += this._apply_change(this.texts[0], ch0, mergedtext);
-				mergedline += ch0.end_b - ch0.start_b;
-			} else if (ch1 !== null) {
-				lastline += this._apply_change(this.texts[2], ch1, mergedtext);
-				mergedline += ch1.end_b - ch1.start_b;
+			} else {
+				const applyResult = this._applyChangeInMerger(
+					ch0,
+					ch1,
+					lastline,
+					mergedtext,
+					mergedline,
+				);
+				lastline = applyResult.lastline;
+				mergedline = applyResult.mergedline;
 			}
 		}
 
-		const baselen = this.texts[1].length;
-		for (let i = lastline; i < baselen; i++) {
-			mergedtext.push(this.texts[1][i]);
-		}
+		this._appendRemainingLines(lastline, this.texts[1] || [], mergedtext);
+		return mergedtext.join("\n");
+	}
 
-		yield mergedtext.join("\n");
-		return undefined;
+	protected _syncWithBase(
+		lastline: number,
+		lowMark: number,
+		mergedtext: string[],
+		mergedline: number,
+	): { mergedline: number } {
+		const lines = this.texts[1];
+		if (lines) {
+			for (let i = lastline; i < lowMark; i++) {
+				mergedtext.push(lines[i] ?? "");
+			}
+		}
+		return { mergedline: mergedline + (lowMark - lastline) };
+	}
+
+	protected _isConflicting(
+		ch0: DiffChunk | null,
+		ch1: DiffChunk | null,
+	): boolean {
+		return (
+			ch0 !== null &&
+			ch1 !== null &&
+			((ch0.tag as string) === "conflict" ||
+				(ch1.tag as string) === "conflict" ||
+				ch0.endA !== ch1.endA)
+		);
+	}
+
+	protected _handleConflictInMerger(
+		lowMark: number,
+		highMark: number,
+		mergedtext: string[],
+		mergedline: number,
+	): { mergedline: number } {
+		let currentMergedLine = mergedline;
+		if (lowMark < highMark) {
+			const lines = this.texts[1];
+			if (lines) {
+				for (let i = lowMark; i < highMark; i++) {
+					mergedtext.push(`(??)${lines[i] ?? ""}`);
+					this.differ.unresolved.push(currentMergedLine);
+					currentMergedLine += 1;
+				}
+			}
+		} else {
+			mergedtext.push("(??)");
+			this.differ.unresolved.push(currentMergedLine);
+			currentMergedLine += 1;
+		}
+		return { mergedline: currentMergedLine };
+	}
+
+	protected _applyChangeInMerger(
+		ch0: DiffChunk | null,
+		ch1: DiffChunk | null,
+		lastline: number,
+		mergedtext: string[],
+		mergedline: number,
+	): { lastline: number; mergedline: number } {
+		let currentLastLine = lastline;
+		let currentMergedLine = mergedline;
+		if (ch0 !== null) {
+			currentLastLine += this._applyChange(
+				this.texts[0] || [],
+				ch0,
+				mergedtext,
+			);
+			currentMergedLine += ch0.endB - ch0.startB;
+		} else if (ch1 !== null) {
+			currentLastLine += this._applyChange(
+				this.texts[2] || [],
+				ch1,
+				mergedtext,
+			);
+			currentMergedLine += ch1.endB - ch1.startB;
+		}
+		return { lastline: currentLastLine, mergedline: currentMergedLine };
+	}
+
+	protected _calculateLowMark(
+		ch0: DiffChunk | null,
+		ch1: DiffChunk | null,
+		lastline: number,
+	): number {
+		let lowMark = lastline;
+		if (ch0 !== null) {
+			lowMark = ch0.startA;
+		}
+		if (ch1 !== null && ch1.startA > lowMark) {
+			lowMark = ch1.startA;
+		}
+		return lowMark;
+	}
+
+	protected _appendLines(
+		start: number,
+		end: number,
+		text: readonly string[],
+		mergedtext: string[],
+	) {
+		for (let i = start; i < end; i++) {
+			const line = text[i];
+			if (line !== undefined) {
+				mergedtext.push(line);
+			}
+		}
+	}
+
+	protected _appendRemainingLines(
+		lastline: number,
+		text: string[],
+		mergedtext: string[],
+	) {
+		if (lastline < text.length) {
+			this._appendLines(lastline, text.length, text, mergedtext);
+		}
 	}
 }
