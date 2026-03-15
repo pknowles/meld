@@ -1,13 +1,14 @@
 import type { editor } from "monaco-editor";
 import React from "react";
 import { useVscodeMessageBus } from "./useVSCodeMessageBus.ts";
-import { useClipboardListeners } from "./useClipboardListeners.ts";
 
 export function useClipboardOverrides(
-	editorRefs: React.MutableRefObject<editor.IStandaloneCodeEditor[]>,
+	_editorRefs: React.MutableRefObject<editor.IStandaloneCodeEditor[]>,
 ) {
 	const vscodeApi = useVscodeMessageBus();
-	const clipboardPendingRef = React.useRef<Map<number, (text: string) => void>>(new Map());
+	const clipboardPendingRef = React.useRef<
+		Map<number, (text: string) => void>
+	>(new Map());
 	const clipboardRequestIdRef = React.useRef(0);
 
 	const requestClipboardText = React.useCallback((): Promise<string> => {
@@ -16,7 +17,10 @@ export function useClipboardOverrides(
 			clipboardPendingRef.current.set(id, resolve);
 			vscodeApi?.postMessage({ command: "readClipboard", requestId: id });
 			if (!vscodeApi) {
-				navigator.clipboard.readText().then(resolve).catch(() => resolve(""));
+				navigator.clipboard
+					.readText()
+					.then(resolve)
+					.catch(() => resolve(""));
 			}
 		});
 	}, [vscodeApi]);
@@ -45,8 +49,6 @@ export function useClipboardOverrides(
 		},
 		[],
 	);
-
-	useClipboardListeners({ editorRefs, requestClipboardText, writeClipboardText });
 
 	return { resolveClipboardRead, requestClipboardText, writeClipboardText };
 }

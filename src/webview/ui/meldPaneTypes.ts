@@ -4,8 +4,7 @@ import type { DiffChunk, FileState, Highlight } from "./types.ts";
 
 export const INITIAL_SYNC_DELAY = 50;
 
-export interface MeldPaneProps {
-	idx: number;
+export interface MeldUIState {
 	files: PaneFiles;
 	diffs: PaneDiffs;
 	prevBaseLeft: FileState | null;
@@ -19,6 +18,9 @@ export interface MeldPaneProps {
 	syntaxHighlighting: boolean;
 	externalSyncId: number;
 	editorRefArray: React.MutableRefObject<editor.IStandaloneCodeEditor[]>;
+}
+
+export interface MeldUIActions {
 	attachScrollListener: (ed: editor.IStandaloneCodeEditor, i: number) => void;
 	forceSyncToPane: (target: number, source: number) => void;
 	handleApplyChunk: (paneIndex: number, chunk: DiffChunk) => void;
@@ -31,7 +33,13 @@ export interface MeldPaneProps {
 	toggleBaseDiff: (side: "left" | "right") => void;
 	handleNavigate: (dir: "prev" | "next", type: "diff" | "conflict") => void;
 	getHighlights: (idx: number) => Highlight[];
-	requestClipboardText?: (requestId: number) => void;
-	writeClipboardText?: (text: string) => Promise<void>;
+	requestClipboardText: () => Promise<string>;
+	writeClipboardText: (text: string) => Promise<void>;
 	onEdit: (v: string | undefined, i: number) => void;
+}
+
+export interface MeldPaneProps {
+	idx: number;
+	ui: MeldUIState;
+	actions: MeldUIActions;
 }

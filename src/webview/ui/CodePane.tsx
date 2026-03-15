@@ -1,58 +1,33 @@
-// Copyright (C) 2026 Pyarelal Knowles, GPL v2
-//
-// This program is free software; you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation; either version 2 of the License, or (at
-// your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 import Editor from "@monaco-editor/react";
-import { editor, Selection, KeyMod, KeyCode } from "monaco-editor";
+import { editor, KeyCode, KeyMod, Selection } from "monaco-editor";
 import {
+	type CSSProperties,
+	type FC,
+	type FocusEvent,
+	type MouseEvent,
 	useEffect,
 	useMemo,
 	useRef,
 	useState,
-	type FC,
-	type CSSProperties,
-	type MouseEvent,
-	type FocusEvent,
 } from "react";
-import type { FileState, Highlight, Commit } from "./types.ts";
 import { computeMinimalEdits } from "./editorUtil.ts";
+import type { MeldUIActions, MeldUIState } from "./meldPaneTypes.ts";
+import type { Commit, FileState, Highlight } from "./types.ts";
 
 const NEWLINE_REGEX = /\r?\n/;
 
 interface CodePaneProps {
 	file: FileState;
 	index: number;
-	onMount: (ed: editor.IStandaloneCodeEditor, i: number) => void;
-	onChange: (v: string | undefined, i: number) => void;
+	ui: MeldUIState;
+	actions: MeldUIActions;
 	isMiddle: boolean;
 	highlights?: Highlight[] | undefined;
-	onCompleteMerge?: (() => void) | undefined;
-	onCopyHash?: ((h: string) => void) | undefined;
-	externalSyncId?: number | undefined;
-	onShowDiff?: (() => void) | undefined;
-	requestClipboardText?: (() => Promise<string>) | undefined;
-	writeClipboardText?: ((t: string) => void) | undefined;
-	syntaxHighlighting?: boolean | undefined;
 	onToggleBase?: (() => void) | undefined;
 	baseSide?: "left" | "right" | undefined;
 	isBaseActive?: boolean | undefined;
 	style?: CSSProperties | undefined;
-	onPrevDiff?: (() => void) | undefined;
-	onNextDiff?: (() => void) | undefined;
-	onPrevConflict?: (() => void) | undefined;
-	onNextConflict?: (() => void) | undefined;
-	autoFocusConflict?: boolean | undefined;
+	onMount: (ed: editor.IStandaloneCodeEditor, i: number) => void;
 }
 
 const CommitHover: FC<{
@@ -132,7 +107,6 @@ const CommitHover: FC<{
 					width="14"
 					height="14"
 					viewBox="0 0 16 16"
-					xmlns="http://www.w3.org/2000/svg"
 					fill="currentColor"
 				>
 					<title>Copy Hash</title>
@@ -168,8 +142,8 @@ const CommitHover: FC<{
 
 const CommitInfo: FC<{
 	commit: Commit;
-	onCopyHash?: ((hash: string) => void) | undefined;
-	onShowDiff?: (() => void) | undefined;
+	onCopyHash?: (hash: string) => void;
+	onShowDiff?: () => void;
 }> = ({ commit, onCopyHash, onShowDiff }) => {
 	const [showHover, setShowHover] = useState(false);
 	const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
@@ -192,7 +166,9 @@ const CommitInfo: FC<{
 		setShowHover(true);
 	};
 	const onLeave = () => {
-		hoverTimerRef.current = setTimeout(() => setShowHover(false), 300);
+		hoverTimerRef.current = setTimeout(() => {
+			setShowHover(false);
+		}, 300);
 	};
 	return (
 		<button
@@ -202,11 +178,16 @@ const CommitInfo: FC<{
 				background: "none",
 				border: "none",
 				padding: 0,
-				margin: 0,
+				margin: "0 8px",
 				color: "inherit",
 				font: "inherit",
 				display: "inline-block",
 				cursor: "pointer",
+				opacity: 0.7,
+				textDecoration: "underline",
+				whiteSpace: "nowrap",
+				overflow: "hidden",
+				textOverflow: "ellipsis",
 			}}
 			onClick={(e) => {
 				if (!hoverRef.current?.contains(e.target as Node)) {
@@ -217,20 +198,8 @@ const CommitInfo: FC<{
 			onMouseLeave={onLeave}
 			onFocus={onEnter}
 			onBlur={onLeave}
-			aria-label="Commit Information"
 		>
-			<span
-				style={{
-					marginLeft: "8px",
-					opacity: 0.7,
-					textDecoration: "underline",
-					whiteSpace: "nowrap",
-					overflow: "hidden",
-					textOverflow: "ellipsis",
-				}}
-			>
-				[{commit.title}]
-			</span>
+			[{commit.title}]
 			{showHover && (
 				<CommitHover
 					commit={commit}
@@ -246,14 +215,11 @@ const CommitInfo: FC<{
 	);
 };
 
-const HeaderNav: FC<{
-	isMiddle: boolean;
-	onPrevDiff?: (() => void) | undefined;
-	onNextDiff?: (() => void) | undefined;
-	onPrevConflict?: (() => void) | undefined;
-	onNextConflict?: (() => void) | undefined;
-}> = (p) => {
-	if (!p.isMiddle) {
+const HeaderNav: FC<{ actions: MeldUIActions; index: number }> = ({
+	actions,
+	index,
+}) => {
+	if (index !== 2) {
 		return null;
 	}
 	return (
@@ -268,7 +234,7 @@ const HeaderNav: FC<{
 			<button
 				type="button"
 				className="nav-btn"
-				onClick={p.onPrevDiff}
+				onClick={() => actions.handleNavigate("prev", "diff")}
 				title="Previous Diff (Alt+Up)"
 			>
 				<svg width="16" height="16" viewBox="0 0 16 16">
@@ -283,7 +249,7 @@ const HeaderNav: FC<{
 			<button
 				type="button"
 				className="nav-btn"
-				onClick={p.onNextDiff}
+				onClick={() => actions.handleNavigate("next", "diff")}
 				title="Next Diff (Alt+Down)"
 			>
 				<svg width="16" height="16" viewBox="0 0 16 16">
@@ -306,7 +272,7 @@ const HeaderNav: FC<{
 			<button
 				type="button"
 				className="nav-btn nav-btn-conflict"
-				onClick={p.onPrevConflict}
+				onClick={() => actions.handleNavigate("prev", "conflict")}
 				title="Previous Conflict (Ctrl+J)"
 			>
 				<svg width="16" height="16" viewBox="0 0 16 16">
@@ -322,7 +288,7 @@ const HeaderNav: FC<{
 			<button
 				type="button"
 				className="nav-btn nav-btn-conflict"
-				onClick={p.onNextConflict}
+				onClick={() => actions.handleNavigate("next", "conflict")}
 				title="Next Conflict (Ctrl+K)"
 			>
 				<svg width="16" height="16" viewBox="0 0 16 16">
@@ -341,14 +307,14 @@ const HeaderNav: FC<{
 
 const ToggleBaseBtn: FC<{
 	isBaseActive: boolean;
-	onToggleBase?: (() => void) | undefined;
-	baseSide?: "left" | "right" | undefined;
+	onToggleBase: (() => void) | undefined;
+	baseSide: "left" | "right" | undefined;
 	side: "left" | "right";
 }> = ({ isBaseActive, onToggleBase, baseSide, side }) => {
 	if (!onToggleBase || baseSide !== side) {
 		return null;
 	}
-	const p =
+	const path =
 		side === "left"
 			? "M2 2h12v12H2V2zm-1 0a1 1 0 011-1h12a1 1 0 011 1v12a1 1 0 01-1 1H2a1 1 0 01-1-1V2zm3 1v10h3V3H4z"
 			: "M14 2H2v12h12V2zM1 2a1 1 0 011-1h12a1 1 0 011 1v12a1 1 0 01-1 1H2a1 1 0 01-1-1V2zm11 1v10H9V3h3z";
@@ -371,15 +337,9 @@ const ToggleBaseBtn: FC<{
 				opacity: isBaseActive ? 1 : 0.6,
 			}}
 		>
-			<svg
-				width="16"
-				height="16"
-				viewBox="0 0 16 16"
-				xmlns="http://www.w3.org/2000/svg"
-				fill="currentColor"
-			>
+			<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
 				<title>Compare with Base</title>
-				<path fillRule="evenodd" clipRule="evenodd" d={p} />
+				<path fillRule="evenodd" clipRule="evenodd" d={path} />
 			</svg>
 		</button>
 	);
@@ -400,94 +360,61 @@ const handleClipboardAction = (
 ) => {
 	const s = ed.getSelection();
 	const m = ed.getModel();
-	if (!(s && m)) {
+	if (!s) {
+		return;
+	}
+	if (!m) {
 		return;
 	}
 	const text = s.isEmpty()
 		? `${m.getLineContent(s.startLineNumber)}\n`
 		: m.getValueInRange(s);
-	if (text) {
-		writeText?.(text);
-		if (type === "cut" && !ed.getOption(editor.EditorOption.readOnly)) {
-			ed.executeEdits("cut", [
-				{
-					range: s.isEmpty()
-						? new Selection(
-								s.startLineNumber,
-								1,
-								s.startLineNumber + 1,
-								1,
-							)
-						: s,
-					text: "",
-				},
-			]);
-		}
+	if (!text) {
+		return;
+	}
+	writeText?.(text);
+	if (type === "cut" && !ed.getOption(editor.EditorOption.readOnly)) {
+		ed.executeEdits("cut", [
+			{
+				range: s.isEmpty()
+					? new Selection(
+							s.startLineNumber,
+							1,
+							s.startLineNumber + 1,
+							1,
+						)
+					: s,
+				text: "",
+			},
+		]);
 	}
 };
 
 const setupActions = (ed: editor.IStandaloneCodeEditor, p: CodePaneProps) => {
-	if (p.writeClipboardText) {
-		ed.addAction({
-			id: "custom-copy",
-			label: "Copy",
-			keybindings: [KeyMod.CtrlCmd | KeyCode.KeyC],
-			contextMenuGroupId: "9_cutcopypaste",
-			contextMenuOrder: 2,
-			run: (e) => handleClipboardAction(e, "copy", p.writeClipboardText),
-		});
-		ed.addAction({
-			id: "custom-cut",
-			label: "Cut",
-			keybindings: [KeyMod.CtrlCmd | KeyCode.KeyX],
-			contextMenuGroupId: "9_cutcopypaste",
-			contextMenuOrder: 1,
-			precondition: "!editorReadonly",
-			run: (e) => handleClipboardAction(e, "cut", p.writeClipboardText),
-		});
-	}
-	if (p.requestClipboardText) {
-		ed.addAction({
-			id: "custom-paste",
-			label: "Paste",
-			keybindings: [KeyMod.CtrlCmd | KeyCode.KeyV],
-			contextMenuGroupId: "9_cutcopypaste",
-			contextMenuOrder: 3,
-			run: (e) =>
-				p
-					.requestClipboardText?.()
-					.then((t) => e.trigger("keyboard", "paste", { text: t })),
-		});
-	}
-	if (p.index === 2) {
-		ed.addAction({
-			id: "prev-diff",
-			label: "Prev Diff",
-			keybindings: [KeyMod.Alt | KeyCode.UpArrow],
-			run: () => p.onPrevDiff?.(),
-		});
-		ed.addAction({
-			id: "next-diff",
-			label: "Next Diff",
-			keybindings: [KeyMod.Alt | KeyCode.DownArrow],
-			run: () => p.onNextDiff?.(),
-		});
-		ed.addAction({
-			id: "prev-conflict",
-			label: "Prev Conflict",
-			keybindings: [KeyMod.CtrlCmd | KeyCode.KeyJ],
-			run: () => p.onPrevConflict?.(),
-		});
-		ed.addAction({
-			id: "next-conflict",
-			label: "Next Conflict",
-			keybindings: [KeyMod.CtrlCmd | KeyCode.KeyK],
-			run: () => p.onNextConflict?.(),
-		});
-		if (p.autoFocusConflict) {
-			setTimeout(() => p.onNextConflict?.(), 500);
-		}
-	}
+	ed.addAction({
+		id: "custom-copy",
+		label: "Copy",
+		keybindings: [KeyMod.CtrlCmd | KeyCode.KeyC],
+		run: (e) =>
+			handleClipboardAction(e, "copy", p.actions.writeClipboardText),
+	});
+	ed.addAction({
+		id: "custom-cut",
+		label: "Cut",
+		keybindings: [KeyMod.CtrlCmd | KeyCode.KeyX],
+		precondition: "!editorReadonly",
+		run: (e) =>
+			handleClipboardAction(e, "cut", p.actions.writeClipboardText),
+	});
+	ed.addAction({
+		id: "custom-paste",
+		label: "Paste",
+		keybindings: [KeyMod.CtrlCmd | KeyCode.KeyV],
+		run: (e) =>
+			p.actions
+				.requestClipboardText?.()
+				.then((t) => e.trigger("keyboard", "paste", { text: t })),
+	});
 };
 
 const getHighlightOptions = (h: Highlight) => ({
@@ -498,12 +425,13 @@ const getHighlightOptions = (h: Highlight) => ({
 	marginClassName: h.isWholeLine ? `diff-${h.tag}-margin` : null,
 });
 
-export const CodePane: FC<CodePaneProps> = (p) => {
+const useCodePaneLogic = (p: CodePaneProps) => {
 	const [ed, setEd] = useState<editor.IStandaloneCodeEditor | null>(null);
-	const [lastSyncId, setLastSyncId] = useState(p.externalSyncId);
+	const [lastSyncId, setLastSyncId] = useState(p.ui.externalSyncId);
 	const isApplyingSync = useRef(false);
 	const [isFlashing, setIsFlashing] = useState(false);
 	const decRef = useRef<string[]>([]);
+
 	useEffect(() => {
 		if (ed && p.highlights) {
 			const nd = p.highlights
@@ -520,15 +448,15 @@ export const CodePane: FC<CodePaneProps> = (p) => {
 			decRef.current = ed.deltaDecorations(decRef.current, nd);
 		}
 	}, [ed, p.highlights]);
+
 	useEffect(() => {
-		if (
-			ed &&
-			p.file.content != null &&
-			p.externalSyncId !== undefined &&
-			p.externalSyncId !== lastSyncId &&
-			p.file.content !== ed.getValue()
-		) {
-			setLastSyncId(p.externalSyncId);
+		if (!ed || p.file.content == null) {
+			return;
+		}
+		const isOutOfSync = p.ui.externalSyncId !== lastSyncId;
+		const hashChanged = p.file.content !== ed.getValue();
+		if (isOutOfSync && hashChanged) {
+			setLastSyncId(p.ui.externalSyncId);
 			const m = ed.getModel();
 			if (m) {
 				isApplyingSync.current = true;
@@ -546,25 +474,35 @@ export const CodePane: FC<CodePaneProps> = (p) => {
 				}
 			}
 		}
-	}, [ed, p.file.content, p.externalSyncId, lastSyncId]);
+	}, [ed, p.file.content, p.ui.externalSyncId, lastSyncId]);
+
 	const onSubmit = () => {
-		if (!(ed && p.onCompleteMerge)) {
+		if (!ed) {
 			return;
 		}
-		const lines = ed.getValue().split(NEWLINE_REGEX);
 		const markers = ["<<<<<<<", "=======", ">>>>>>>", "|||||||"];
+		const lines = ed.getValue().split(NEWLINE_REGEX);
 		const idx = lines.findIndex(
 			(l) => markers.some((m) => l.startsWith(m)) || l.startsWith("(??)"),
 		);
 		if (idx !== -1) {
 			setIsFlashing(true);
-			setTimeout(() => setIsFlashing(false), 1000);
+			setTimeout(() => {
+				setIsFlashing(false);
+			}, 1000);
 			ed.revealLineInCenter(idx + 1);
 			ed.setPosition({ lineNumber: idx + 1, column: 1 });
 			ed.focus();
 		}
-		p.onCompleteMerge();
+		p.actions.handleCompleteMerge();
 	};
+
+	return { ed, setEd, isApplyingSync, isFlashing, onSubmit };
+};
+
+export const CodePane: FC<CodePaneProps> = (p) => {
+	const { setEd, isApplyingSync, isFlashing, onSubmit } = useCodePaneLogic(p);
+
 	return (
 		<div
 			style={{
@@ -603,18 +541,12 @@ export const CodePane: FC<CodePaneProps> = (p) => {
 				{p.file.commit && (
 					<CommitInfo
 						commit={p.file.commit}
-						onCopyHash={p.onCopyHash}
-						onShowDiff={p.onShowDiff}
+						onCopyHash={p.actions.handleCopyHash}
+						onShowDiff={() => p.actions.handleShowDiff(p.index)}
 					/>
 				)}
 				<div style={{ flex: 1 }} />
-				<HeaderNav
-					isMiddle={p.index === 2}
-					onPrevDiff={p.onPrevDiff}
-					onNextDiff={p.onNextDiff}
-					onPrevConflict={p.onPrevConflict}
-					onNextConflict={p.onNextConflict}
-				/>
+				<HeaderNav actions={p.actions} index={p.index} />
 				<div style={{ flex: 1 }} />
 				<ToggleBaseBtn
 					side="right"
@@ -625,7 +557,9 @@ export const CodePane: FC<CodePaneProps> = (p) => {
 			</div>
 			<div style={{ flex: 1, position: "relative", minHeight: 0 }}>
 				<Editor
-					language={p.syntaxHighlighting ? "typescript" : "plaintext"}
+					language={
+						p.ui.syntaxHighlighting ? "typescript" : "plaintext"
+					}
 					defaultValue={p.file.content || ""}
 					theme="vs-dark"
 					options={useMemo(
@@ -643,10 +577,15 @@ export const CodePane: FC<CodePaneProps> = (p) => {
 						setEd(e);
 						p.onMount(e, p.index);
 						setupActions(e, p);
+						if (p.index === 2 && p.ui.files[1] !== null) {
+							setTimeout(() => {
+								p.actions.handleNavigate("next", "conflict");
+							}, 500);
+						}
 					}}
 					onChange={(v) => {
 						if (!isApplyingSync.current) {
-							p.onChange(v, p.index);
+							p.actions.onEdit(v, p.index);
 						}
 					}}
 				/>
