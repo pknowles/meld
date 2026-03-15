@@ -223,31 +223,18 @@ function _mapLineDiscrete(line: number, opts: MappingOptions): number {
 	if (idx > 0) {
 		const prev = chunks[idx - 1];
 		if (prev) {
-			const [, s2] = _sOf(prev, sourceIsA);
+			const [s1, s2] = _sOf(prev, sourceIsA);
 			if (line < s2) {
-				const [s1] = _sOf(prev, sourceIsA);
 				const [t1, t2] = _tOf(prev, sourceIsA);
 				return _interpolate(line, s1, s2, t1, t2);
 			}
+			// We are in a gap after 'prev'
+			const [, tEnd] = _tOf(prev, sourceIsA);
+			return line + (tEnd - s2);
 		}
 	}
 
-	if (idx < chunks.length) {
-		const chunk = chunks[idx];
-		if (chunk) {
-			const [sCurStart] = _sOf(chunk, sourceIsA);
-			const [tCurStart] = _tOf(chunk, sourceIsA);
-			return line + (tCurStart - sCurStart);
-		}
-	}
-
-	const last = chunks.at(-1);
-	if (last) {
-		const [, sEnd] = _sOf(last, sourceIsA);
-		const [, tEnd] = _tOf(last, sourceIsA);
-		return line + (tEnd - sEnd);
-	}
-
+	// Leading gap (idx === 0)
 	return line;
 }
 

@@ -236,7 +236,7 @@ describe("mapLineAcrossPanes", () => {
 			smooth: false,
 			diffIsReversed: [false, false, false, false],
 		};
-		expect(mapLineAcrossPanes(15, 0, 3, ctx)).toBe(30);
+		expect(mapLineAcrossPanes(15, 0, 3, ctx)).toBe(20);
 	});
 
 	it("respects diffIsReversed", () => {
