@@ -171,8 +171,10 @@ const CommitInfo: FC<{
 		}, 300);
 	};
 	return (
-		<button
-			type="button"
+		// biome-ignore lint/a11y: interactive commit chip
+		<span
+			role="button"
+			tabIndex={0}
 			style={{
 				position: "relative",
 				background: "none",
@@ -194,6 +196,11 @@ const CommitInfo: FC<{
 					onShowDiff?.();
 				}
 			}}
+			onKeyDown={(e) => {
+				if (e.key === "Enter" || e.key === " ") {
+					onShowDiff?.();
+				}
+			}}
 			onMouseEnter={onEnter}
 			onMouseLeave={onLeave}
 			onFocus={onEnter}
@@ -211,7 +218,7 @@ const CommitInfo: FC<{
 					}}
 				/>
 			)}
-		</button>
+		</span>
 	);
 };
 

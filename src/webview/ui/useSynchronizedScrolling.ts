@@ -133,6 +133,14 @@ function syncScrollToTarget(opts: SyncOptions) {
 			targetBasePx + targetFraction * (targetNextPx - targetBasePx);
 	}
 
+	if (
+		typeof otherEditor.getLayoutInfo !== "function" ||
+		typeof otherEditor.getScrollTop !== "function" ||
+		typeof otherEditor.setScrollTop !== "function"
+	) {
+		return;
+	}
+
 	const layoutInfo = otherEditor.getLayoutInfo();
 	const targetScrollTop = targetSyncY - layoutInfo.height * syncpoint;
 	if (Math.abs(otherEditor.getScrollTop() - targetScrollTop) > 2) {
@@ -218,6 +226,10 @@ const useSynchronizedScrolling = (
 ) => {
 	const scrollLockRef = React.useRef<boolean>(false);
 	const requestFrameRef = React.useRef<number | null>(null);
+	const smoothScrollingRef = React.useRef(smoothScrolling);
+	React.useEffect(() => {
+		smoothScrollingRef.current = smoothScrolling;
+	}, [smoothScrolling]);
 
 	const syncEditors = React.useCallback(
 		(
@@ -243,7 +255,7 @@ const useSynchronizedScrolling = (
 							editorRefs,
 							diffsRef,
 							diffsAreReversedRef,
-							smoothScrolling,
+							smoothScrolling: smoothScrollingRef.current,
 							targetIndices,
 						});
 					}
@@ -266,7 +278,7 @@ const useSynchronizedScrolling = (
 				});
 			}
 		},
-		[editorRefs, diffsRef, diffsAreReversedRef, smoothScrolling],
+		[editorRefs, diffsRef, diffsAreReversedRef],
 	);
 
 	const attachScrollListener = React.useCallback(

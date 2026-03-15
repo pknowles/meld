@@ -2,8 +2,6 @@ import type { editor } from "monaco-editor";
 import type { PaneDiffs, PaneFiles } from "./appHooks.ts";
 import type { DiffChunk, FileState, Highlight } from "./types.ts";
 
-export const INITIAL_SYNC_DELAY = 50;
-
 export interface MeldUIState {
 	files: PaneFiles;
 	diffs: PaneDiffs;
@@ -18,6 +16,7 @@ export interface MeldUIState {
 	syntaxHighlighting: boolean;
 	externalSyncId: number;
 	editorRefArray: React.MutableRefObject<editor.IStandaloneCodeEditor[]>;
+	highlights: (idx: number) => Highlight[];
 }
 
 export interface MeldUIActions {
@@ -36,10 +35,5 @@ export interface MeldUIActions {
 	requestClipboardText: () => Promise<string>;
 	writeClipboardText: (text: string) => Promise<void>;
 	onEdit: (v: string | undefined, i: number) => void;
-}
-
-export interface MeldPaneProps {
-	idx: number;
-	ui: MeldUIState;
-	actions: MeldUIActions;
+	handleMountEditor: (ed: editor.IStandaloneCodeEditor, idx: number) => void;
 }

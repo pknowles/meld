@@ -41,7 +41,7 @@ export const AnimatedColumn = ({
 	const marginValue = active
 		? "0"
 		: `calc(-1 * ((100% + var(--meld-diff-width)) / ${div}))`;
-	return shouldRender || isOpen ? (
+	return (
 		<div
 			id={id}
 			style={{
@@ -50,10 +50,13 @@ export const AnimatedColumn = ({
 				marginLeft: side === "left" ? marginValue : 0,
 				marginRight: side === "right" ? marginValue : 0,
 				transition: ANIMATION_TRANSITION,
-				flex: 1,
+				flex: active || isOpen ? 1 : 0,
+				visibility: shouldRender || isOpen ? "visible" : "hidden",
+				pointerEvents: isOpen ? "auto" : "none",
+				minWidth: 0,
 			}}
 		>
 			{children}
 		</div>
-	) : null;
+	);
 };
