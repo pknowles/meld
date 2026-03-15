@@ -201,5 +201,3 @@ export function getPaneHighlights(
 			return [];
 	}
 }
-
-export { processChunk };

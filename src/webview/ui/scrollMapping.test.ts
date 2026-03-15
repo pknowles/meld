@@ -3,6 +3,7 @@
 import { mapLineAcrossChunks, mapLineAcrossPanes } from "./scrollMapping.ts";
 import type { DiffChunk } from "./types.ts";
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: This is a large test file with many scenarios
 describe("mapLineAcrossChunks", () => {
 	describe("basic functionality", () => {
 		it("maps 1:1 for null or empty chunks", () => {
@@ -190,6 +191,7 @@ describe("mapLineAcrossChunks", () => {
 	});
 });
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: This is a large test suite
 describe("mapLineAcrossPanes", () => {
 	const PaneCounts: [number, number, number, number, number] = [
 		100, 100, 100, 100, 100,

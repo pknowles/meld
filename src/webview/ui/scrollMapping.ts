@@ -370,5 +370,4 @@ function mapLineAcrossPanes(
 	return mapLineAcrossPanes(targetLine, nextIdx, targetIdx, ctx);
 }
 
-export type { MappingOptions, PaneMappingContext };
 export { mapLineAcrossChunks, mapLineAcrossPanes };

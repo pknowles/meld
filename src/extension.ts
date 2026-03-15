@@ -234,18 +234,22 @@ async function handleAutoMergeAll(
 			cancellable: false,
 		},
 		async (progress) => {
-			for (const file of unmergedFiles) {
-				try {
-					progress.report({ message: `Merging ${file.label}...` });
-					await commands.executeCommand(
-						"meld-auto-merge.autoMerge",
-						file,
-					);
-					successCount++;
-				} catch {
-					errorCount++;
-				}
-			}
+			await Promise.all(
+				unmergedFiles.map(async (file) => {
+					try {
+						progress.report({
+							message: `Merging ${file.label}...`,
+						});
+						await commands.executeCommand(
+							"meld-auto-merge.autoMerge",
+							file,
+						);
+						successCount++;
+					} catch {
+						errorCount++;
+					}
+				}),
+			);
 		},
 	);
 
@@ -325,7 +329,9 @@ async function handleRerereForget(
 		{ modal: true },
 		"Yes",
 	);
-	if (confirm !== "Yes") return;
+	if (confirm !== "Yes") {
+		return;
+	}
 
 	const workspaceFolder = workspace.getWorkspaceFolder(documentUri);
 	if (!workspaceFolder) {
